@@ -2,8 +2,17 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>PhD Tracker</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="./icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Doutorado">
 <style>
   :root {
     color-scheme: light;
@@ -78,6 +87,11 @@
     background: var(--surface-1);
     border-bottom: 1px solid var(--border);
     padding: 0 20px;
+  }
+  /* instalado como app: respeita notch e barra de gestos */
+  @media (display-mode: standalone) {
+    header.app { padding-top: env(safe-area-inset-top); }
+    main { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
   }
   .app-bar { display: flex; align-items: center; gap: 14px; height: 54px; max-width: 1200px; margin: 0 auto; }
   .app-bar h1 { font-size: 15.5px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1228,6 +1242,11 @@ function renderDash() {
 /* ================= render ================= */
 function renderAll() { renderGantt(); renderColl(); renderGrants(); renderCosts(); renderManu(); renderTrips(); renderDash(); }
 boot();
+
+/* PWA: instalável e abre offline. Não roda em file:// (exige https ou localhost). */
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+}
 </script>
 </body>
 </html>
