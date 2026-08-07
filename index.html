@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhD Tracker</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6;          /* série 1 (azul) */
+    --accent-soft: #cde2fb;     /* azul 100 */
+    --accent-mid: #86b6ef;      /* azul 250 */
+    --accent-deep: #1c5cab;     /* azul 550 */
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --shadow: 0 1px 3px rgba(11,11,11,0.06), 0 4px 14px rgba(11,11,11,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --ink-1: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --accent: #3987e5;
+      --accent-soft: #10305a;
+      --accent-mid: #2a5f9e;
+      --accent-deep: #6da7ec;
+      --good-text: #0ca30c;
+      --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --ink-1: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --accent: #3987e5;
+    --accent-soft: #10305a;
+    --accent-mid: #2a5f9e;
+    --accent-deep: #6da7ec;
+    --good-text: #0ca30c;
+    --shadow: none;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--ink-1);
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  a { color: var(--accent); }
+
+  header.app {
+    position: sticky; top: 0; z-index: 40;
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+  }
+  .app-bar { display: flex; align-items: center; gap: 14px; height: 54px; max-width: 1200px; margin: 0 auto; }
+  .app-bar h1 { font-size: 15.5px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-bar .sub { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+  .app-bar .spacer { flex: 1; }
+  .iconbtn {
+    border: 1px solid var(--border); background: transparent; color: var(--ink-2);
+    border-radius: 8px; padding: 6px 10px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+  }
+  .iconbtn:hover { background: var(--page); }
+
+  nav.tabs { max-width: 1200px; margin: 0 auto; display: flex; gap: 2px; overflow-x: auto; }
+  nav.tabs button {
+    appearance: none; border: 0; background: transparent; font-family: inherit;
+    font-size: 13.5px; color: var(--ink-2); padding: 9px 13px; cursor: pointer;
+    border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  nav.tabs button.active { color: var(--ink-1); font-weight: 600; border-bottom-color: var(--accent); }
+  nav.tabs button:hover:not(.active) { color: var(--ink-1); }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 22px 20px 80px; }
+  section.view { display: none; }
+  section.view.active { display: block; }
+
+  .view-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .view-head h2 { font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+  .view-head .hint { color: var(--muted); font-size: 12.5px; }
+  .view-head .grow { flex: 1; }
+
+  .btn {
+    appearance: none; font-family: inherit; font-size: 13px; font-weight: 600;
+    border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid transparent;
+  }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-deep); }
+  .btn.ghost { background: transparent; color: var(--ink-2); border-color: var(--border); }
+  .btn.ghost:hover { background: var(--surface-1); }
+  .btn.danger { background: transparent; color: var(--critical); border-color: var(--border); }
+  .btn.sm { padding: 4px 10px; font-size: 12px; }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .grid { display: grid; gap: 14px; }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 900px) { .grid.cols-4, .grid.cols-3 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 620px) { .grid.cols-4, .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; } }
+
+  /* ---- stat tiles ---- */
+  .tile .label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .tile .value { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin-top: 2px; }
+  .tile .note { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+
+  h3.blk { font-size: 14px; font-weight: 650; margin: 26px 0 10px; }
+  h3.blk:first-child { margin-top: 0; }
+
+  /* ---- progress bars ---- */
+  .pbar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .pbar > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+
+  /* ---- badges ---- */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
+    padding: 2px 9px; border-radius: 99px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap;
+  }
+  .badge i { width: 7px; height: 7px; border-radius: 99px; background: var(--muted); flex: 0 0 auto; }
+  .badge.b-blue i { background: var(--accent); }
+  .badge.b-good i { background: var(--good); }
+  .badge.b-warn i { background: var(--warning); }
+  .badge.b-ser i { background: var(--serious); }
+  .badge.b-crit i { background: var(--critical); }
+
+  /* ---- tables ---- */
+  .tblwrap { overflow-x: auto; }
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.tbl th {
+    text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); font-weight: 650; padding: 8px 10px; border-bottom: 1px solid var(--baseline);
+    white-space: nowrap;
+  }
+  table.tbl td { padding: 9px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  table.tbl tr:last-child td { border-bottom: 0; }
+  table.tbl td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.tbl th.num { text-align: right; }
+
+  /* ---- gantt ---- */
+  .gantt-scroll { overflow-x: auto; padding-bottom: 4px; }
+  table.gantt { border-collapse: collapse; font-size: 12.5px; min-width: 900px; width: 100%; }
+  table.gantt th, table.gantt td { border: 1px solid var(--grid); padding: 0; }
+  table.gantt th {
+    font-size: 11px; font-weight: 650; color: var(--muted); padding: 6px 4px;
+    text-transform: uppercase; letter-spacing: 0.03em; text-align: center; min-width: 44px;
+    background: var(--surface-1);
+  }
+  table.gantt th.cur { color: var(--accent); border-bottom: 2px solid var(--accent); }
+  table.gantt td.act {
+    padding: 7px 10px; white-space: nowrap; background: var(--surface-1);
+    position: sticky; left: 0; z-index: 2; border-right: 1px solid var(--baseline);
+    max-width: 240px; overflow: hidden; text-overflow: ellipsis; font-size: 13px;
+  }
+  table.gantt td.act .milestone { font-weight: 650; }
+  table.gantt td.q { cursor: pointer; height: 32px; min-width: 44px; position: relative; }
+  table.gantt td.q:hover { outline: 2px solid var(--accent-mid); outline-offset: -2px; z-index: 1; }
+  table.gantt td.q.plan { background: var(--accent-mid); }
+  table.gantt td.q.done { background: var(--accent-deep); }
+  table.gantt td.q.done::after {
+    content: "✓"; position: absolute; inset: 0; display: grid; place-items: center;
+    color: #fff; font-size: 12px; font-weight: 700;
+  }
+  table.gantt td.q.curq { box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent); }
+  .gantt-legend { display: flex; gap: 18px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+  .gantt-legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .gantt-legend i { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--grid); }
+
+  /* ---- entity cards (manuscripts / trips / grants) ---- */
+  .ecard { display: flex; flex-direction: column; gap: 10px; }
+  .ecard .top { display: flex; align-items: flex-start; gap: 10px; }
+  .ecard .top h4 { font-size: 14.5px; font-weight: 650; flex: 1; line-height: 1.35; }
+  .ecard .meta { font-size: 12.5px; color: var(--ink-2); }
+  .ecard .meta b { color: var(--ink-1); font-weight: 600; }
+  .ecard .foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; flex-wrap: wrap; }
+  .ecard .notes { font-size: 12.5px; color: var(--ink-2); background: var(--page); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; }
+  .stage-select { font-family: inherit; font-size: 12.5px; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-1); color: var(--ink-1); }
+  .prog-row { display: flex; align-items: center; gap: 10px; }
+  .prog-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .prog-row .pct { font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); width: 38px; text-align: right; }
+
+  .checkline { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+  .checkline input { accent-color: var(--good); }
+
+  /* ---- modal ---- */
+  dialog {
+    border: 1px solid var(--border); border-radius: 14px; background: var(--surface-1); color: var(--ink-1);
+    padding: 0; width: min(560px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.35); }
+  .modal-head { padding: 16px 20px 0; font-size: 16px; font-weight: 650; }
+  .modal-body { padding: 14px 20px; display: grid; gap: 12px; }
+  .modal-body .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 520px) { .modal-body .row2 { grid-template-columns: 1fr; } }
+  .field label { display: block; font-size: 12px; font-weight: 650; color: var(--ink-2); margin-bottom: 4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; font-family: inherit; font-size: 13.5px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--page); color: var(--ink-1);
+  }
+  .field textarea { min-height: 70px; resize: vertical; }
+  .modal-foot { padding: 6px 20px 18px; display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-foot .left { margin-right: auto; }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 18px; text-align: center; border: 1px dashed var(--baseline); border-radius: 10px; }
+
+  /* ---- coletas ---- */
+  .collbar { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface-1); }
+  .seg button {
+    appearance: none; border: 0; background: transparent; font-family: inherit; font-size: 13px;
+    padding: 7px 14px; cursor: pointer; color: var(--ink-2); white-space: nowrap;
+  }
+  .seg button.active { background: var(--accent); color: #fff; font-weight: 600; }
+  #coll-search {
+    flex: 1; min-width: 220px; font-family: inherit; font-size: 13.5px; padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface-1); color: var(--ink-1);
+  }
+  table.tbl tr.rowlink { cursor: pointer; }
+  table.tbl tr.rowlink:hover td { background: var(--page); }
+  .coords { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .count-note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+
+  /* ---- login ---- */
+  #login-screen {
+    position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+    background: var(--page); padding: 20px;
+  }
+  .login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 28px; }
+  .login-card h2 { font-size: 20px; font-weight: 650; text-align: center; }
+  .login-card p { font-size: 13px; color: var(--ink-2); text-align: center; margin-top: -6px; }
+  .login-error { font-size: 13px; color: var(--critical); text-align: center; }
+  .sync-badge { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .sync-badge.ok { color: var(--good-text); }
+  .sync-badge.err { color: var(--serious); }
+
+  .dash-list { display: flex; flex-direction: column; gap: 10px; }
+  .dash-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
+  .dash-item .when { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .dash-item .what { flex: 1; }
+  .mini-pbar { display: grid; grid-template-columns: 1fr 90px 40px; align-items: center; gap: 10px; font-size: 13px; }
+  .mini-pbar .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mini-pbar .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="app-bar">
+    <h1>🍄 Doutorado — <span class="sub">cronograma · coletas · financiamentos · manuscritos · campo</span></h1>
+    <div class="spacer"></div>
+    <span class="sync-badge" id="sync-badge" style="display:none;"></span>
+    <button class="iconbtn" id="btn-export" title="Baixar backup JSON">Exportar</button>
+    <button class="iconbtn" id="btn-import" title="Restaurar backup JSON">Importar</button>
+    <button class="iconbtn" id="btn-theme" title="Alternar tema">◐</button>
+    <button class="iconbtn" id="btn-logout" title="Sair da conta" style="display:none;">Sair</button>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-view="dash" class="active">Painel</button>
+    <button data-view="cron">Cronograma</button>
+    <button data-view="coll">Coletas</button>
+    <button data-view="fund">Financiamentos</button>
+    <button data-view="manu">Manuscritos</button>
+    <button data-view="trip">Campo &amp; Viagens</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ PAINEL ============ -->
+  <section class="view active" id="view-dash">
+    <div class="grid cols-4" id="dash-tiles"></div>
+    <div class="grid cols-2" style="margin-top:14px; align-items:start;">
+      <div class="card">
+        <h3 class="blk">Atividades do trimestre atual</h3>
+        <div class="dash-list" id="dash-now"></div>
+      </div>
+      <div class="card">
+        <h3 class="blk">Próximas viagens e campo</h3>
+        <div class="dash-list" id="dash-trips"></div>
+      </div>
+      <div class="card">
+        <h3 class="blk">Progresso dos manuscritos</h3>
+        <div class="dash-list" id="dash-manu"></div>
+      </div>
+      <div class="card">
+        <h3 class="blk">Financiamentos</h3>
+        <div class="dash-list" id="dash-fund"></div>
+      </div>
+      <div class="card">
+        <h3 class="blk">Coletas recentes</h3>
+        <div class="dash-list" id="dash-coll"></div>
+      </div>
+      <div class="card">
+        <h3 class="blk">Resumo do acervo</h3>
+        <div class="dash-list" id="dash-acervo"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CRONOGRAMA ============ -->
+  <section class="view" id="view-cron">
+    <div class="view-head">
+      <h2>Cronograma de atividades</h2>
+      <span class="hint">Clique numa célula para alternar: vazio → planejado → concluído. O trimestre atual está destacado.</span>
+      <div class="grow"></div>
+      <button class="btn ghost sm" id="btn-add-activity">+ Atividade</button>
+    </div>
+    <div class="card">
+      <div class="gantt-scroll"><table class="gantt" id="gantt"></table></div>
+      <div class="gantt-legend">
+        <span><i style="background:var(--accent-mid)"></i> Planejado</span>
+        <span><i style="background:var(--accent-deep)"></i> Concluído</span>
+        <span><i style="box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent);"></i> Trimestre atual</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COLETAS ============ -->
+  <section class="view" id="view-coll">
+    <div class="view-head">
+      <h2>Banco de coletas</h2>
+      <span class="hint" id="coll-hint">Clique numa linha para ver/editar todos os campos.</span>
+      <div class="grow"></div>
+      <button class="btn ghost sm" id="btn-csv-coll">Exportar CSV</button>
+      <button class="btn primary sm" id="btn-add-coll">+ Nova coleta</button>
+    </div>
+    <div class="collbar">
+      <div class="seg" id="coll-seg">
+        <button data-sub="mine" class="active">Minhas coletas</button>
+        <button data-sub="ext">Amostras em coleções</button>
+      </div>
+      <input type="search" id="coll-search" placeholder="Buscar por código, ID, hospedeiro, localidade…">
+    </div>
+    <div class="card">
+      <div class="tblwrap"><table class="tbl" id="coll-table"></table></div>
+      <div id="coll-empty" class="empty" style="display:none;"></div>
+      <div class="count-note" id="coll-count"></div>
+    </div>
+  </section>
+
+  <!-- ============ FINANCIAMENTOS ============ -->
+  <section class="view" id="view-fund">
+    <div class="view-head">
+      <h2>Grants e financiamentos</h2>
+      <div class="grow"></div>
+      <button class="btn primary sm" id="btn-add-grant">+ Financiamento</button>
+    </div>
+    <div class="grid cols-2" id="grant-cards"></div>
+    <h3 class="blk">Custos previstos do projeto</h3>
+    <div class="card">
+      <div class="tblwrap"><table class="tbl" id="cost-table"></table></div>
+      <div style="margin-top:10px;"><button class="btn ghost sm" id="btn-add-cost">+ Item de custo</button></div>
+    </div>
+  </section>
+
+  <!-- ============ MANUSCRITOS ============ -->
+  <section class="view" id="view-manu">
+    <div class="view-head">
+      <h2>Manuscritos</h2>
+      <span class="hint">Arraste a barra para atualizar o progresso; o estágio salva automaticamente.</span>
+      <div class="grow"></div>
+      <button class="btn primary sm" id="btn-add-manu">+ Manuscrito</button>
+    </div>
+    <div class="grid cols-2" id="manu-cards"></div>
+  </section>
+
+  <!-- ============ CAMPO & VIAGENS ============ -->
+  <section class="view" id="view-trip">
+    <div class="view-head">
+      <h2>Campo e viagens</h2>
+      <span class="hint">Estação chuvosa (nov–jun) = melhor janela para estromas férteis.</span>
+      <div class="grow"></div>
+      <button class="btn primary sm" id="btn-add-trip">+ Viagem</button>
+    </div>
+    <div class="grid cols-2" id="trip-cards"></div>
+  </section>
+</main>
+
+<div id="login-screen" style="display:none;">
+  <form class="card login-card" id="login-form">
+    <h2>🍄 Doutorado</h2>
+    <p>Entre para acessar e sincronizar seus dados.</p>
+    <div class="field"><label>E-mail</label><input name="email" type="email" autocomplete="username" required></div>
+    <div class="field"><label>Senha</label><input name="password" type="password" autocomplete="current-password" required></div>
+    <div class="login-error" id="login-error" style="display:none;"></div>
+    <button class="btn primary" type="submit" id="login-submit">Entrar</button>
+    <button class="btn ghost" type="button" id="login-offline">Continuar offline (dados deste dispositivo)</button>
+  </form>
+</div>
+
+<dialog id="modal">
+  <div class="modal-head" id="modal-title"></div>
+  <form method="dialog" id="modal-form">
+    <div class="modal-body" id="modal-fields"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn danger sm left" id="modal-delete" style="display:none;">Excluir</button>
+      <button type="button" class="btn ghost" id="modal-cancel">Cancelar</button>
+      <button type="submit" class="btn primary" id="modal-save">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+/* ================= dados ================= */
+const LS_KEY = "phd-tracker-v1";
+/* Backend (Supabase): crie o projeto, rode supabase/setup.sql no SQL Editor
+ * e cole aqui a Project URL e a chave anon/publishable (Settings → API Keys).
+ * Com os dois vazios o app funciona 100% local, sem login. */
+const SUPABASE_URL = "https://vrrcvuzdajoefcfhogqo.supabase.co";
+const SUPABASE_KEY = "sb_publishable_nYHy8JJLVi3nC3HLbQnKdw_KAYFDPxL";
+const API_ON = SUPABASE_URL !== "" && SUPABASE_KEY !== "";
+const TOKEN_KEY = "phd-tracker-session";
+const QUARTERS = [];
+for (let y = 2026; y <= 2030; y++) for (let q = 1; q <= 4; q++) {
+  if (y === 2026 && q < 3) continue;
+  if (y === 2030 && q > 2) continue;
+  QUARTERS.push(`${y}Q${q}`);
+}
+const qLabel = k => k.replace("Q", " · Q").replace(/^(\d{4})/, "$1").split(" · ").reverse().join(" ");
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+function seed() {
+  /* O app nasce vazio: os dados ficam no Supabase (atrás do login)
+   * e no localStorage de cada dispositivo — nunca neste arquivo público. */
+  return { activities: [], grants: [], costs: [], manuscripts: [], trips: [], collections: [], samples: [] };
+}
+
+let state = load();
+state.collections ??= [];   /* migração: bases criadas antes da v2 não têm estes campos */
+state.samples ??= [];
+function load() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { console.warn("Falha ao carregar dados salvos:", e); }
+  const s = seed();
+  localStorage.setItem(LS_KEY, JSON.stringify(s));
+  return s;
+}
+function save() {
+  state._updatedAt = Date.now();
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
+  if (API_ON && getSession()) scheduleSync();
+}
+
+/* ================= sincronização (Supabase) ================= */
+let syncTimer = null;
+function getSession() {
+  try { return JSON.parse(localStorage.getItem(TOKEN_KEY)) || null; } catch { return null; }
+}
+function saveSession(j) {
+  localStorage.setItem(TOKEN_KEY, JSON.stringify({
+    access_token: j.access_token,
+    refresh_token: j.refresh_token,
+    uid: j.user?.id || getSession()?.uid,
+  }));
+}
+function setSync(status) {
+  const b = document.querySelector("#sync-badge");
+  if (!API_ON) { b.style.display = "none"; return; }
+  b.style.display = "";
+  b.className = "sync-badge " + (status === "ok" ? "ok" : status === "err" ? "err" : "");
+  b.textContent = status === "ok" ? "☁ salvo" : status === "err" ? "⚠ offline — salvo localmente" : "☁ sincronizando…";
+}
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  setSync("pending");
+  syncTimer = setTimeout(pushState, 1500);
+}
+function sbAuth(grant, body) {
+  return fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grant}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY },
+    body: JSON.stringify(body),
+  });
+}
+async function sbRefresh() {
+  const s = getSession();
+  if (!s?.refresh_token) return false;
+  try {
+    const r = await sbAuth("refresh_token", { refresh_token: s.refresh_token });
+    if (!r.ok) { localStorage.removeItem(TOKEN_KEY); return false; }
+    saveSession(await r.json());
+    return true;
+  } catch { return false; }
+}
+async function sbFetch(path, opts = {}, retry = true) {
+  const s = getSession();
+  const r = await fetch(SUPABASE_URL + path, {
+    ...opts,
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: "Bearer " + (s?.access_token || ""),
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
+  if (r.status === 401 && retry && await sbRefresh()) return sbFetch(path, opts, false);
+  return r;
+}
+async function pushState() {
+  const s = getSession();
+  if (!s) return;
+  try {
+    const r = await sbFetch("/rest/v1/app_state", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify([{ user_id: s.uid, data: state, updated_at: new Date().toISOString() }]),
+    });
+    if (r.ok) setSync("ok");
+    else if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); }
+    else setSync("err");
+  } catch { setSync("err"); }
+}
+
+function showLogin() {
+  document.querySelector("#login-screen").style.display = "";
+  document.querySelector("#login-error").style.display = "none";
+}
+function startApp() {
+  document.querySelector("#login-screen").style.display = "none";
+  document.querySelector("#btn-logout").style.display = API_ON && getSession() ? "" : "none";
+  renderAll();
+}
+async function boot() {
+  if (!API_ON) { startApp(); return; }
+  if (!getSession()) { showLogin(); return; }
+  try {
+    const r = await sbFetch(`/rest/v1/app_state?select=data&user_id=eq.${getSession().uid}`);
+    if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); return; }
+    const rows = await r.json();
+    const remote = Array.isArray(rows) ? rows[0]?.data : null;
+    if (remote && (remote._updatedAt || 0) > (state._updatedAt || 0)) {
+      remote.collections ??= []; remote.samples ??= [];
+      state = remote;
+      localStorage.setItem(LS_KEY, JSON.stringify(state));
+      setSync("ok");
+    } else if (state._updatedAt || state.activities.length || state.collections.length || state.manuscripts.length) {
+      pushState(); // dados locais mais novos (ou servidor vazio): envia
+    } else {
+      setSync("ok");
+    }
+  } catch { setSync("err"); } // sem rede: segue com o cache local
+  startApp();
+}
+
+/* ================= util ================= */
+const $ = sel => document.querySelector(sel);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const fmtDate = iso => {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d || 1).toLocaleDateString("pt-BR", { day: d ? "2-digit" : undefined, month: "short", year: "numeric" });
+};
+function currentQuarter() {
+  const now = new Date();
+  return `${now.getFullYear()}Q${Math.floor(now.getMonth() / 3) + 1}`;
+}
+const CURQ = currentQuarter();
+
+const TRIP_STATUS = { ideia: ["b-warn", "Ideia"], planejada: ["b-blue", "Planejada"], confirmada: ["b-good", "Confirmada"], concluida: ["b-good", "Concluída"], cancelada: ["b-crit", "Cancelada"] };
+const GRANT_STATUS = { ativo: ["b-good", "Ativo"], planejado: ["b-blue", "Planejado"], pendente: ["b-warn", "Pendente"], submetido: ["b-blue", "Submetido"], negado: ["b-crit", "Negado"], encerrado: ["", "Encerrado"] };
+const STAGES = ["planejamento", "coleta de dados", "análise", "redação", "submetido", "em revisão", "aceito", "publicado"];
+const TRIP_TYPES = { campo: "🌿 Campo", "herbário": "🏛 Herbário", "congresso": "🎤 Congresso", "estágio": "✈️ Estágio", outra: "📌 Outra" };
+
+/* Classes e ordens de Arthropoda (optgroups do dropdown "Grupo do hospedeiro") */
+const HOST_GROUPS = {
+  "Insecta — Hemiptera": [
+    "Hemiptera (indet.)",
+    "Hemiptera — Auchenorrhyncha",
+    "Hemiptera — Sternorrhyncha",
+    "Hemiptera — Heteroptera",
+    "Hemiptera — Coleorrhyncha",
+  ],
+  "Insecta — outras ordens": [
+    "Coleoptera", "Hymenoptera", "Hymenoptera — Formicidae", "Lepidoptera", "Diptera",
+    "Orthoptera", "Blattodea", "Blattodea — Isoptera", "Mantodea", "Phasmatodea",
+    "Odonata", "Neuroptera", "Megaloptera", "Raphidioptera", "Trichoptera",
+    "Dermaptera", "Psocodea", "Thysanoptera", "Ephemeroptera", "Plecoptera",
+    "Mecoptera", "Siphonaptera", "Strepsiptera", "Embioptera", "Zoraptera",
+    "Zygentoma", "Archaeognatha",
+  ],
+  "Arachnida": ["Araneae", "Opiliones", "Scorpiones", "Pseudoscorpiones", "Amblypygi", "Thelyphonida", "Solifugae", "Acari"],
+  "Myriapoda": ["Chilopoda", "Diplopoda", "Symphyla", "Pauropoda"],
+  "Crustacea": ["Isopoda", "Decapoda", "Amphipoda"],
+  "Entognatha": ["Collembola", "Diplura", "Protura"],
+  "Outro": ["Arthropoda (indet.)", "Outro"],
+};
+const COLL_TYPES = ["Fungo + hospedeiro + substrato", "Fungo + hospedeiro", "Apenas fungo", "Cultura viva", "Amostra de DNA/sílica", "Outra"];
+
+/* ================= navegação ================= */
+$("#tabs").addEventListener("click", e => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll("section.view").forEach(v => v.classList.toggle("active", v.id === "view-" + btn.dataset.view));
+});
+
+/* ================= tema ================= */
+$("#btn-theme").addEventListener("click", () => {
+  const root = document.documentElement;
+  const dark = getComputedStyle(root).colorScheme.includes("dark");
+  root.dataset.theme = dark ? "light" : "dark";
+});
+
+/* ================= login / logout ================= */
+$("#login-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = $("#login-submit"), err = $("#login-error");
+  const fd = new FormData(e.target);
+  btn.disabled = true; btn.textContent = "Entrando…"; err.style.display = "none";
+  try {
+    const r = await sbAuth("password", { email: String(fd.get("email")).trim(), password: fd.get("password") });
+    if (!r.ok) {
+      err.textContent = (r.status === 400 || r.status === 401)
+        ? "E-mail ou senha incorretos."
+        : "Erro no servidor (" + r.status + "). Tente novamente.";
+      err.style.display = "";
+    } else {
+      saveSession(await r.json());
+      e.target.reset();
+      await boot();
+    }
+  } catch {
+    err.textContent = "Sem conexão com o servidor. Verifique a internet ou continue offline.";
+    err.style.display = "";
+  }
+  btn.disabled = false; btn.textContent = "Entrar";
+});
+$("#login-offline").addEventListener("click", () => { setSync("err"); startApp(); });
+$("#btn-logout").addEventListener("click", () => {
+  if (!confirm("Sair da conta? Os dados deste dispositivo continuam salvos localmente.")) return;
+  localStorage.removeItem(TOKEN_KEY);
+  showLogin();
+});
+
+/* ================= export / import ================= */
+$("#btn-export").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `doutorado-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+});
+$("#btn-import").addEventListener("click", () => {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "application/json";
+  input.onchange = () => {
+    const f = input.files[0]; if (!f) return;
+    f.text().then(txt => {
+      try {
+        const data = JSON.parse(txt);
+        if (!data.activities || !data.manuscripts) throw new Error("estrutura inválida");
+        data.collections ??= []; data.samples ??= [];
+        state = data; save(); renderAll();
+      } catch (err) { alert("Arquivo inválido: " + err.message); }
+    });
+  };
+  input.click();
+});
+
+/* ================= modal genérico ================= */
+const modal = $("#modal");
+let modalCtx = null;
+function openModal({ title, fields, values = {}, onSave, onDelete, onAction }) {
+  $("#modal-title").textContent = title;
+  const wrap = $("#modal-fields");
+  wrap.innerHTML = "";
+  let pendingRow = null;
+  fields.forEach(f => {
+    const div = document.createElement("div");
+    div.className = "field";
+    const val = values[f.key] ?? f.default ?? "";
+    let ctrl;
+    if (f.type === "select") {
+      const opt = o => `<option value="${esc(o[0])}" ${o[0] === val ? "selected" : ""}>${esc(o[1])}</option>`;
+      const inner = f.groups
+        ? `<option value="">—</option>` + Object.entries(f.groups).map(([g, list]) => `<optgroup label="${esc(g)}">${list.map(v => opt([v, v])).join("")}</optgroup>`).join("")
+        : f.options.map(opt).join("");
+      ctrl = `<select name="${f.key}">${inner}</select>`;
+    } else if (f.type === "button") {
+      if (pendingRow) { wrap.appendChild(pendingRow); pendingRow = null; }
+      div.innerHTML = `<button type="button" class="btn ghost sm" data-action="${esc(f.key)}">${esc(f.label)}</button>`;
+      wrap.appendChild(div);
+      return;
+    } else if (f.type === "textarea") {
+      ctrl = `<textarea name="${f.key}">${esc(val)}</textarea>`;
+    } else {
+      ctrl = `<input name="${f.key}" type="${f.type || "text"}" value="${esc(val)}" ${f.step ? `step="${f.step}"` : ""}>`;
+    }
+    div.innerHTML = `<label>${esc(f.label)}</label>${ctrl}`;
+    if (f.half) {
+      if (pendingRow) { pendingRow.appendChild(div); wrap.appendChild(pendingRow); pendingRow = null; }
+      else { pendingRow = document.createElement("div"); pendingRow.className = "row2"; pendingRow.appendChild(div); }
+    } else {
+      if (pendingRow) { wrap.appendChild(pendingRow); pendingRow = null; }
+      wrap.appendChild(div);
+    }
+  });
+  if (pendingRow) wrap.appendChild(pendingRow);
+  $("#modal-delete").style.display = onDelete ? "" : "none";
+  modalCtx = { onSave, onDelete, onAction };
+  modal.showModal();
+}
+$("#modal-fields").addEventListener("click", e => {
+  const btn = e.target.closest("[data-action]");
+  if (btn) modalCtx?.onAction?.(btn.dataset.action);
+});
+$("#modal-cancel").addEventListener("click", () => modal.close());
+$("#modal-delete").addEventListener("click", () => {
+  if (modalCtx?.onDelete && confirm("Excluir este item?")) { modalCtx.onDelete(); modal.close(); save(); renderAll(); }
+});
+$("#modal-form").addEventListener("submit", e => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries());
+  modalCtx?.onSave(data);
+  modal.close(); save(); renderAll();
+});
+
+/* ================= cronograma (gantt) ================= */
+function renderGantt() {
+  const t = $("#gantt");
+  const years = {};
+  QUARTERS.forEach(q => { const y = q.slice(0, 4); (years[y] ??= []).push(q); });
+  let html = `<tr><th style="text-align:left; position:sticky; left:0; z-index:3; background:var(--surface-1);">Atividade</th>`;
+  html += Object.entries(years).map(([y, qs]) => `<th colspan="${qs.length}">${y}</th>`).join("");
+  html += `</tr><tr><th style="position:sticky; left:0; z-index:3; background:var(--surface-1);"></th>`;
+  html += QUARTERS.map(q => `<th class="${q === CURQ ? "cur" : ""}">Q${q.slice(-1)}</th>`).join("");
+  html += `</tr>`;
+  state.activities.forEach(act => {
+    html += `<tr><td class="act" data-edit="${act.id}" title="${esc(act.name)} — clique para renomear/excluir"><span class="${act.milestone ? "milestone" : ""}">${act.milestone ? "★ " : ""}${esc(act.name)}</span></td>`;
+    QUARTERS.forEach(q => {
+      const st = act.quarters[q] || "";
+      html += `<td class="q ${st} ${q === CURQ ? "curq" : ""}" data-act="${act.id}" data-q="${q}"></td>`;
+    });
+    html += `</tr>`;
+  });
+  if (!state.activities.length) {
+    html += `<tr><td class="act" style="color:var(--muted);">Nenhuma atividade</td><td colspan="${QUARTERS.length}" style="padding:10px 14px; color:var(--muted); font-size:12.5px;">Use “+ Atividade” para começar — ou entre na sua conta para carregar seus dados.</td></tr>`;
+  }
+  t.innerHTML = html;
+}
+$("#gantt").addEventListener("click", e => {
+  const cell = e.target.closest("td.q");
+  if (cell) {
+    const act = state.activities.find(a => a.id === cell.dataset.act);
+    const cur = act.quarters[cell.dataset.q] || "";
+    const next = cur === "" ? "plan" : cur === "plan" ? "done" : "";
+    if (next) act.quarters[cell.dataset.q] = next; else delete act.quarters[cell.dataset.q];
+    save(); renderGantt(); renderDash();
+    return;
+  }
+  const name = e.target.closest("td.act");
+  if (name) {
+    const act = state.activities.find(a => a.id === name.dataset.edit);
+    openModal({
+      title: "Editar atividade",
+      fields: [
+        { key: "name", label: "Nome da atividade" },
+        { key: "milestone", label: "Marco importante (★)", type: "select", options: [["no", "Não"], ["yes", "Sim"]] },
+      ],
+      values: { name: act.name, milestone: act.milestone ? "yes" : "no" },
+      onSave: d => { act.name = d.name.trim() || act.name; act.milestone = d.milestone === "yes"; },
+      onDelete: () => { state.activities = state.activities.filter(a => a.id !== act.id); },
+    });
+  }
+});
+$("#btn-add-activity").addEventListener("click", () => {
+  openModal({
+    title: "Nova atividade",
+    fields: [
+      { key: "name", label: "Nome da atividade" },
+      { key: "milestone", label: "Marco importante (★)", type: "select", options: [["no", "Não"], ["yes", "Sim"]] },
+    ],
+    onSave: d => { if (d.name.trim()) state.activities.push({ id: uid(), name: d.name.trim(), milestone: d.milestone === "yes", quarters: {} }); },
+  });
+});
+
+/* ================= financiamentos ================= */
+function grantFields() {
+  return [
+    { key: "name", label: "Nome do grant / bolsa" },
+    { key: "agency", label: "Agência / fonte", half: true },
+    { key: "holder", label: "Titular", half: true },
+    { key: "status", label: "Status", type: "select", half: true, options: Object.entries(GRANT_STATUS).map(([k, v]) => [k, v[1]]) },
+    { key: "deadline", label: "Prazo / deadline", type: "date", half: true },
+    { key: "amount", label: "Valor (opcional)" },
+    { key: "covers", label: "O que cobre" },
+    { key: "notes", label: "Notas", type: "textarea" },
+  ];
+}
+function renderGrants() {
+  const wrap = $("#grant-cards");
+  wrap.innerHTML = state.grants.map(g => {
+    const [cls, lbl] = GRANT_STATUS[g.status] || ["", g.status];
+    return `<div class="card ecard">
+      <div class="top">
+        <h4>${esc(g.name)}</h4>
+        <span class="badge ${cls}"><i></i>${esc(lbl)}</span>
+      </div>
+      <div class="meta"><b>${esc(g.agency)}</b> · Titular: ${esc(g.holder)}</div>
+      ${g.covers ? `<div class="meta">Cobre: ${esc(g.covers)}</div>` : ""}
+      <div class="meta">${g.amount ? `Valor: <b>${esc(g.amount)}</b> · ` : ""}Prazo: <b>${fmtDate(g.deadline)}</b></div>
+      ${g.notes ? `<div class="notes">${esc(g.notes)}</div>` : ""}
+      <div class="foot"><button class="btn ghost sm" data-edit-grant="${g.id}">Editar</button></div>
+    </div>`;
+  }).join("") || `<div class="empty">Nenhum financiamento cadastrado.</div>`;
+}
+$("#grant-cards").addEventListener("click", e => {
+  const id = e.target.closest("[data-edit-grant]")?.dataset.editGrant; if (!id) return;
+  const g = state.grants.find(x => x.id === id);
+  openModal({
+    title: "Editar financiamento", fields: grantFields(), values: g,
+    onSave: d => Object.assign(g, d),
+    onDelete: () => { state.grants = state.grants.filter(x => x.id !== id); },
+  });
+});
+$("#btn-add-grant").addEventListener("click", () => {
+  openModal({
+    title: "Novo financiamento", fields: grantFields(), values: { status: "planejado" },
+    onSave: d => state.grants.push({ id: uid(), ...d }),
+  });
+});
+
+/* custos */
+const USD_BRL = 5.17;
+function renderCosts() {
+  const t = $("#cost-table");
+  const total = state.costs.reduce((s, c) => s + (Number(c.usd) || 0), 0);
+  t.innerHTML = `<tr><th>Item</th><th class="num">US$</th><th class="num">≈ R$</th><th></th></tr>` +
+    state.costs.map(c => `<tr>
+      <td>${esc(c.item)}</td>
+      <td class="num">${(Number(c.usd) || 0).toLocaleString("pt-BR")}</td>
+      <td class="num">${Math.round((Number(c.usd) || 0) * USD_BRL).toLocaleString("pt-BR")}</td>
+      <td class="num"><button class="btn ghost sm" data-edit-cost="${c.id}">Editar</button></td>
+    </tr>`).join("") +
+    `<tr><td style="font-weight:650;">Total</td><td class="num" style="font-weight:650;">${total.toLocaleString("pt-BR")}</td><td class="num" style="font-weight:650;">${Math.round(total * USD_BRL).toLocaleString("pt-BR")}</td><td></td></tr>`;
+}
+$("#cost-table").addEventListener("click", e => {
+  const id = e.target.closest("[data-edit-cost]")?.dataset.editCost; if (!id) return;
+  const c = state.costs.find(x => x.id === id);
+  openModal({
+    title: "Editar item de custo",
+    fields: [{ key: "item", label: "Descrição" }, { key: "usd", label: "Valor (US$)", type: "number", step: "1" }],
+    values: c,
+    onSave: d => { c.item = d.item; c.usd = Number(d.usd) || 0; },
+    onDelete: () => { state.costs = state.costs.filter(x => x.id !== id); },
+  });
+});
+$("#btn-add-cost").addEventListener("click", () => {
+  openModal({
+    title: "Novo item de custo",
+    fields: [{ key: "item", label: "Descrição" }, { key: "usd", label: "Valor (US$)", type: "number", step: "1" }],
+    onSave: d => state.costs.push({ id: uid(), item: d.item, usd: Number(d.usd) || 0 }),
+  });
+});
+
+/* ================= manuscritos ================= */
+function manuFields() {
+  return [
+    { key: "title", label: "Título" },
+    { key: "period", label: "Período previsto", half: true },
+    { key: "journals", label: "Periódicos-alvo", half: true },
+    { key: "notes", label: "Escopo / notas", type: "textarea" },
+  ];
+}
+function renderManu() {
+  const wrap = $("#manu-cards");
+  wrap.innerHTML = state.manuscripts.map(m => `<div class="card ecard">
+    <div class="top"><h4>${esc(m.title)}</h4></div>
+    <div class="meta"><b>${esc(m.period)}</b></div>
+    <div class="meta">Alvo: ${esc(m.journals)}</div>
+    <div class="prog-row">
+      <select class="stage-select" data-stage="${m.id}">
+        ${STAGES.map(s => `<option value="${s}" ${s === m.stage ? "selected" : ""}>${s[0].toUpperCase() + s.slice(1)}</option>`).join("")}
+      </select>
+      <input type="range" min="0" max="100" step="5" value="${m.progress}" data-prog="${m.id}">
+      <span class="pct">${m.progress}%</span>
+    </div>
+    <div class="pbar"><i style="width:${m.progress}%"></i></div>
+    ${m.notes ? `<div class="notes">${esc(m.notes)}</div>` : ""}
+    <div class="foot"><button class="btn ghost sm" data-edit-manu="${m.id}">Editar</button></div>
+  </div>`).join("") || `<div class="empty">Nenhum manuscrito.</div>`;
+}
+$("#manu-cards").addEventListener("input", e => {
+  if (e.target.dataset.prog) {
+    const m = state.manuscripts.find(x => x.id === e.target.dataset.prog);
+    m.progress = Number(e.target.value);
+    e.target.closest(".ecard").querySelector(".pct").textContent = m.progress + "%";
+    e.target.closest(".ecard").querySelector(".pbar > i").style.width = m.progress + "%";
+    save(); renderDash();
+  }
+});
+$("#manu-cards").addEventListener("change", e => {
+  if (e.target.dataset.stage) {
+    const m = state.manuscripts.find(x => x.id === e.target.dataset.stage);
+    m.stage = e.target.value; save(); renderDash();
+  }
+});
+$("#manu-cards").addEventListener("click", e => {
+  const id = e.target.closest("[data-edit-manu]")?.dataset.editManu; if (!id) return;
+  const m = state.manuscripts.find(x => x.id === id);
+  openModal({
+    title: "Editar manuscrito", fields: manuFields(), values: m,
+    onSave: d => Object.assign(m, d),
+    onDelete: () => { state.manuscripts = state.manuscripts.filter(x => x.id !== id); },
+  });
+});
+$("#btn-add-manu").addEventListener("click", () => {
+  openModal({
+    title: "Novo manuscrito", fields: manuFields(),
+    onSave: d => state.manuscripts.push({ id: uid(), stage: "planejamento", progress: 0, ...d }),
+  });
+});
+
+/* ================= campo & viagens ================= */
+function tripFields() {
+  return [
+    { key: "title", label: "Título" },
+    { key: "type", label: "Tipo", type: "select", half: true, options: Object.entries(TRIP_TYPES) },
+    { key: "status", label: "Status", type: "select", half: true, options: Object.entries(TRIP_STATUS).map(([k, v]) => [k, v[1]]) },
+    { key: "location", label: "Local" },
+    { key: "start", label: "Início", type: "date", half: true },
+    { key: "end", label: "Fim (opcional)", type: "date", half: true },
+    { key: "notes", label: "Notas / logística", type: "textarea" },
+  ];
+}
+function renderTrips() {
+  const wrap = $("#trip-cards");
+  const sorted = [...state.trips].sort((a, b) => (a.start || "9999") < (b.start || "9999") ? -1 : 1);
+  wrap.innerHTML = sorted.map(t => {
+    const [cls, lbl] = TRIP_STATUS[t.status] || ["", t.status];
+    const isField = t.type === "campo";
+    return `<div class="card ecard">
+      <div class="top">
+        <h4>${TRIP_TYPES[t.type]?.split(" ")[0] || "📌"} ${esc(t.title)}</h4>
+        <span class="badge ${cls}"><i></i>${esc(lbl)}</span>
+      </div>
+      <div class="meta"><b>${esc(t.location)}</b> · ${fmtDate(t.start)}${t.end ? " → " + fmtDate(t.end) : ""}</div>
+      ${isField ? `<div class="foot">
+        <label class="checkline"><input type="checkbox" data-permit="sisbio" data-trip="${t.id}" ${t.sisbio ? "checked" : ""}> Licença SISBIO/ICMBio</label>
+        <label class="checkline"><input type="checkbox" data-permit="sisgen" data-trip="${t.id}" ${t.sisgen ? "checked" : ""}> Cadastro SisGen/MMA</label>
+      </div>` : ""}
+      ${t.notes ? `<div class="notes">${esc(t.notes)}</div>` : ""}
+      <div class="foot"><button class="btn ghost sm" data-edit-trip="${t.id}">Editar</button></div>
+    </div>`;
+  }).join("") || `<div class="empty">Nenhuma viagem planejada.</div>`;
+}
+$("#trip-cards").addEventListener("change", e => {
+  if (e.target.dataset.permit) {
+    const t = state.trips.find(x => x.id === e.target.dataset.trip);
+    t[e.target.dataset.permit] = e.target.checked; save(); renderDash();
+  }
+});
+$("#trip-cards").addEventListener("click", e => {
+  const id = e.target.closest("[data-edit-trip]")?.dataset.editTrip; if (!id) return;
+  const t = state.trips.find(x => x.id === id);
+  openModal({
+    title: "Editar viagem", fields: tripFields(), values: t,
+    onSave: d => Object.assign(t, d),
+    onDelete: () => { state.trips = state.trips.filter(x => x.id !== id); },
+  });
+});
+$("#btn-add-trip").addEventListener("click", () => {
+  openModal({
+    title: "Nova viagem", fields: tripFields(), values: { type: "campo", status: "planejada" },
+    onSave: d => state.trips.push({ id: uid(), sisbio: false, sisgen: false, ...d }),
+  });
+});
+
+/* ================= coletas ================= */
+let collSub = "mine";
+let collQuery = "";
+
+function nextCollCode() {
+  const codes = state.collections.map(c => c.code).filter(Boolean);
+  if (!codes.length) return "TAJ001";
+  const last = codes.map(c => c.match(/^(.*?)(\d+)\s*$/)).filter(Boolean)
+    .sort((a, b) => Number(a[2]) - Number(b[2])).pop();
+  if (!last) return "";
+  const n = String(Number(last[2]) + 1).padStart(last[2].length, "0");
+  return last[1] + n;
+}
+
+function collFields() {
+  return [
+    { key: "date", label: "Data", type: "date", half: true, default: new Date().toISOString().slice(0, 10) },
+    { key: "code", label: "Coleta (código)", half: true, default: nextCollCode() },
+    { key: "colltype", label: "Tipo da coleção", type: "select", half: true, options: COLL_TYPES.map(t => [t, t]) },
+    { key: "photographed", label: "Fotografado", type: "select", half: true, options: [["nao", "Não"], ["sim", "Sim"]] },
+    { key: "voucher", label: "Voucher de herbário", half: true },
+    { key: "barcode", label: "Barcode de herbário", half: true },
+    { key: "currentId", label: "ID atual (nome científico provisório)" },
+    { key: "host", label: "Hospedeiro", half: true },
+    { key: "hostGroup", label: "Grupo do hospedeiro", type: "select", groups: HOST_GROUPS, half: true },
+    { key: "locality", label: "Localidade" },
+    { key: "lat", label: "Latitude (graus decimais)", half: true },
+    { key: "lon", label: "Longitude (graus decimais)", half: true },
+    { key: "gps", label: "📍 Preencher coordenadas com o GPS do dispositivo", type: "button" },
+    { key: "substrate", label: "Substrato" },
+    { key: "notes", label: "Notas", type: "textarea" },
+  ];
+}
+function sampleFields() {
+  return [
+    { key: "source", label: "Fonte (ex: empréstimo, visita, doação)", half: true },
+    { key: "collection", label: "Coleção (ex: FLOR, IAN, K, CBS)", half: true },
+    { key: "currentId", label: "ID atual" },
+    { key: "host", label: "Hospedeiro", half: true },
+    { key: "hostGroup", label: "Grupo do hospedeiro", type: "select", groups: HOST_GROUPS, half: true },
+    { key: "locality", label: "Localidade" },
+    { key: "lat", label: "Latitude", half: true },
+    { key: "lon", label: "Longitude", half: true },
+    { key: "collector", label: "Coletor", half: true },
+    { key: "collDate", label: "Data de coleta (ex: 1998-03-12 ou mar/1998)", half: true },
+    { key: "determiner", label: "Determinador", half: true },
+    { key: "detDate", label: "Data de determinação", half: true },
+    { key: "notes", label: "Notas", type: "textarea" },
+  ];
+}
+
+const gpsAction = act => {
+  if (act !== "gps") return;
+  if (!navigator.geolocation) { alert("Geolocalização não disponível neste navegador."); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const la = $("#modal-fields [name=lat]"), lo = $("#modal-fields [name=lon]");
+      if (la) la.value = pos.coords.latitude.toFixed(6);
+      if (lo) lo.value = pos.coords.longitude.toFixed(6);
+    },
+    err => alert("Não foi possível obter a posição: " + err.message + "\n(O GPS só funciona em páginas https ou localhost.)"),
+    { enableHighAccuracy: true, timeout: 12000 }
+  );
+};
+
+function collMatches(obj, q) {
+  return !q || Object.values(obj).join(" ").toLowerCase().includes(q);
+}
+function renderColl() {
+  const q = collQuery.toLowerCase().trim();
+  document.querySelectorAll("#coll-seg button").forEach(b => b.classList.toggle("active", b.dataset.sub === collSub));
+  $("#coll-seg [data-sub=mine]").textContent = `Minhas coletas (${state.collections.length})`;
+  $("#coll-seg [data-sub=ext]").textContent = `Amostras em coleções (${state.samples.length})`;
+  $("#btn-add-coll").textContent = collSub === "mine" ? "+ Nova coleta" : "+ Nova amostra";
+  const t = $("#coll-table"), empty = $("#coll-empty");
+  if (collSub === "mine") {
+    const rows = state.collections.filter(c => collMatches(c, q))
+      .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.code || "").localeCompare(a.code || ""));
+    t.innerHTML = rows.length ? `<tr><th>Coleta</th><th>Data</th><th>Tipo</th><th>ID atual</th><th>Hospedeiro</th><th>Grupo</th><th>Localidade</th><th>Voucher / barcode</th><th>Foto</th></tr>` +
+      rows.map(c => `<tr class="rowlink" data-kind="mine" data-id="${c.id}">
+        <td style="font-weight:650; white-space:nowrap;">${esc(c.code || "—")}</td>
+        <td class="num">${esc(c.date || "—")}</td>
+        <td>${esc(c.colltype || "—")}</td>
+        <td><i>${esc(c.currentId || "—")}</i></td>
+        <td>${esc(c.host || "—")}</td>
+        <td>${esc(c.hostGroup || "—")}</td>
+        <td>${esc(c.locality || "—")}${(c.lat || c.lon) ? `<div class="coords">${esc(c.lat)}, ${esc(c.lon)}</div>` : ""}</td>
+        <td>${esc(c.voucher || "—")}${c.barcode ? `<div class="coords">${esc(c.barcode)}</div>` : ""}</td>
+        <td>${c.photographed === "sim" ? "📷" : "—"}</td>
+      </tr>`).join("") : "";
+    empty.style.display = rows.length ? "none" : "";
+    empty.textContent = q ? "Nenhuma coleta corresponde à busca." : "Nenhuma coleta registrada ainda — use “+ Nova coleta” no campo.";
+    $("#coll-count").textContent = `${rows.length} de ${state.collections.length} coletas`;
+  } else {
+    const rows = state.samples.filter(s => collMatches(s, q))
+      .sort((a, b) => (a.collection || "").localeCompare(b.collection || "") || (a.currentId || "").localeCompare(b.currentId || ""));
+    t.innerHTML = rows.length ? `<tr><th>Coleção</th><th>Fonte</th><th>ID atual</th><th>Hospedeiro</th><th>Grupo</th><th>Localidade</th><th>Coletor · data</th><th>Determinador · data</th></tr>` +
+      rows.map(s => `<tr class="rowlink" data-kind="ext" data-id="${s.id}">
+        <td style="font-weight:650; white-space:nowrap;">${esc(s.collection || "—")}</td>
+        <td>${esc(s.source || "—")}</td>
+        <td><i>${esc(s.currentId || "—")}</i></td>
+        <td>${esc(s.host || "—")}</td>
+        <td>${esc(s.hostGroup || "—")}</td>
+        <td>${esc(s.locality || "—")}${(s.lat || s.lon) ? `<div class="coords">${esc(s.lat)}, ${esc(s.lon)}</div>` : ""}</td>
+        <td>${esc(s.collector || "—")}${s.collDate ? `<div class="coords">${esc(s.collDate)}</div>` : ""}</td>
+        <td>${esc(s.determiner || "—")}${s.detDate ? `<div class="coords">${esc(s.detDate)}</div>` : ""}</td>
+      </tr>`).join("") : "";
+    empty.style.display = rows.length ? "none" : "";
+    empty.textContent = q ? "Nenhuma amostra corresponde à busca." : "Nenhuma amostra de coleção cadastrada ainda.";
+    $("#coll-count").textContent = `${rows.length} de ${state.samples.length} amostras`;
+  }
+}
+$("#coll-seg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  collSub = b.dataset.sub; renderColl();
+});
+$("#coll-search").addEventListener("input", e => { collQuery = e.target.value; renderColl(); });
+$("#coll-table").addEventListener("click", e => {
+  const row = e.target.closest("tr.rowlink"); if (!row) return;
+  if (row.dataset.kind === "mine") {
+    const c = state.collections.find(x => x.id === row.dataset.id);
+    openModal({
+      title: "Editar coleta " + (c.code || ""), fields: collFields(), values: c, onAction: gpsAction,
+      onSave: d => Object.assign(c, d),
+      onDelete: () => { state.collections = state.collections.filter(x => x.id !== c.id); },
+    });
+  } else {
+    const s = state.samples.find(x => x.id === row.dataset.id);
+    openModal({
+      title: "Editar amostra", fields: sampleFields(), values: s, onAction: gpsAction,
+      onSave: d => Object.assign(s, d),
+      onDelete: () => { state.samples = state.samples.filter(x => x.id !== s.id); },
+    });
+  }
+});
+$("#btn-add-coll").addEventListener("click", () => {
+  if (collSub === "mine") {
+    openModal({
+      title: "Nova coleta (campo)", fields: collFields(), onAction: gpsAction,
+      onSave: d => state.collections.push({ id: uid(), ...d }),
+    });
+  } else {
+    openModal({
+      title: "Nova amostra de coleção", fields: sampleFields(), onAction: gpsAction,
+      onSave: d => state.samples.push({ id: uid(), ...d }),
+    });
+  }
+});
+
+function csvDownload(filename, header, rows) {
+  const quote = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const txt = "\uFEFF" + [header, ...rows].map(r => r.map(quote).join(";")).join("\r\n");
+  const blob = new Blob([txt], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  URL.revokeObjectURL(a.href);
+}
+$("#btn-csv-coll").addEventListener("click", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  if (collSub === "mine") {
+    csvDownload(`coletas-${today}.csv`,
+      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Substrato", "Notas"],
+      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.lat, c.lon, c.substrate, c.notes]));
+  } else {
+    csvDownload(`amostras-colecoes-${today}.csv`,
+      ["Fonte", "Coleção", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Coletor", "Data de coleta", "Determinador", "Data de determinação", "Notas"],
+      state.samples.map(s => [s.source, s.collection, s.currentId, s.host, s.hostGroup, s.locality, s.lat, s.lon, s.collector, s.collDate, s.determiner, s.detDate, s.notes]));
+  }
+});
+
+/* ================= painel ================= */
+function renderDash() {
+  const defense = new Date(2030, 5, 30);
+  const now = new Date();
+  const daysLeft = Math.max(0, Math.round((defense - now) / 86400000));
+  const totalCells = state.activities.reduce((s, a) => s + Object.keys(a.quarters).length, 0);
+  const doneCells = state.activities.reduce((s, a) => s + Object.values(a.quarters).filter(v => v === "done").length, 0);
+  const pctDone = totalCells ? Math.round(100 * doneCells / totalCells) : 0;
+  const activeGrants = state.grants.filter(g => g.status === "ativo").length;
+  const nextTrip = [...state.trips].filter(t => t.start && t.start >= now.toISOString().slice(0, 10) && t.status !== "cancelada" && t.status !== "concluida").sort((a, b) => a.start < b.start ? -1 : 1)[0];
+
+  $("#dash-tiles").innerHTML = `
+    <div class="card tile"><div class="label">Até a defesa</div><div class="value">${daysLeft.toLocaleString("pt-BR")}</div><div class="note">dias · previsão jun/2030</div></div>
+    <div class="card tile"><div class="label">Cronograma cumprido</div><div class="value">${pctDone}%</div><div class="note">${doneCells} de ${totalCells} células concluídas</div></div>
+    <div class="card tile"><div class="label">Financiamentos ativos</div><div class="value">${activeGrants}</div><div class="note">de ${state.grants.length} cadastrados</div></div>
+    <div class="card tile"><div class="label">Próxima viagem</div><div class="value" style="font-size:17px; line-height:1.3; margin-top:6px;">${nextTrip ? esc(nextTrip.title) : "—"}</div><div class="note">${nextTrip ? fmtDate(nextTrip.start) + " · " + esc(nextTrip.location) : "nada agendado"}</div></div>`;
+
+  const nowActs = state.activities.filter(a => a.quarters[CURQ]);
+  $("#dash-now").innerHTML = nowActs.map(a => `<div class="dash-item">
+    <span class="badge ${a.quarters[CURQ] === "done" ? "b-good" : "b-blue"}"><i></i>${a.quarters[CURQ] === "done" ? "Feito" : "Em curso"}</span>
+    <span class="what">${a.milestone ? "★ " : ""}${esc(a.name)}</span></div>`).join("")
+    || `<div class="empty">Nenhuma atividade planejada para ${qLabel(CURQ)}.</div>`;
+
+  const upcoming = [...state.trips].filter(t => t.status !== "cancelada" && t.status !== "concluida" && t.start).sort((a, b) => a.start < b.start ? -1 : 1).slice(0, 5);
+  $("#dash-trips").innerHTML = upcoming.map(t => `<div class="dash-item">
+    <span class="when">${fmtDate(t.start)}</span>
+    <span class="what">${TRIP_TYPES[t.type]?.split(" ")[0] || ""} ${esc(t.title)}</span>
+    <span class="badge ${TRIP_STATUS[t.status]?.[0] || ""}"><i></i>${TRIP_STATUS[t.status]?.[1] || t.status}</span></div>`).join("")
+    || `<div class="empty">Nenhuma viagem futura.</div>`;
+
+  $("#dash-manu").innerHTML = state.manuscripts.map(m => `<div class="mini-pbar">
+    <span class="t" title="${esc(m.title)}">${esc(m.title)}</span>
+    <span class="pbar"><i style="width:${m.progress}%"></i></span>
+    <span class="pct">${m.progress}%</span></div>`).join("");
+
+  $("#dash-fund").innerHTML = state.grants.map(g => `<div class="dash-item">
+    <span class="badge ${GRANT_STATUS[g.status]?.[0] || ""}"><i></i>${GRANT_STATUS[g.status]?.[1] || g.status}</span>
+    <span class="what">${esc(g.name)}</span>
+    ${g.deadline ? `<span class="when">até ${fmtDate(g.deadline)}</span>` : ""}</div>`).join("");
+
+  const recent = [...state.collections].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+  $("#dash-coll").innerHTML = recent.map(c => `<div class="dash-item">
+    <span class="when">${esc(c.date || "—")}</span>
+    <span class="what"><b>${esc(c.code || "?")}</b> · ${esc(c.currentId || c.hostGroup || "sem ID")}</span>
+    <span class="when">${esc(c.locality || "")}</span></div>`).join("")
+    || `<div class="empty">Nenhuma coleta registrada ainda.</div>`;
+
+  const nColl = state.collections.length;
+  const nFoto = state.collections.filter(c => c.photographed === "sim").length;
+  const nVou = state.collections.filter(c => c.voucher).length;
+  const nHemi = state.collections.filter(c => (c.hostGroup || "").startsWith("Hemiptera")).length;
+  $("#dash-acervo").innerHTML = `
+    <div class="dash-item"><span class="what">Coletas próprias</span><b>${nColl}</b></div>
+    <div class="dash-item"><span class="what">— em Hemiptera</span><b>${nHemi}</b></div>
+    <div class="dash-item"><span class="what">— fotografadas</span><b>${nFoto}</b></div>
+    <div class="dash-item"><span class="what">— com voucher de herbário</span><b>${nVou}</b></div>
+    <div class="dash-item"><span class="what">Amostras em coleções</span><b>${state.samples.length}</b></div>`;
+}
+
+/* ================= render ================= */
+function renderAll() { renderGantt(); renderColl(); renderGrants(); renderCosts(); renderManu(); renderTrips(); renderDash(); }
+boot();
+</script>
+</body>
+</html>
