@@ -263,6 +263,47 @@
   .coords { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .count-note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
 
+  /* ---- importação ---- */
+  dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
+  dialog[open].wide { display: flex; flex-direction: column; }
+  dialog.wide .modal-body { overflow-y: auto; min-height: 0; }
+  dialog.wide .modal-head, dialog.wide .modal-foot { flex: 0 0 auto; }
+  /* minmax(0,1fr) em toda a cadeia: sem isso os grids assumem a largura do
+     conteúdo mais largo (a tabela de prévia) e estouram a tela no celular */
+  .imp-step { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  dialog.wide .modal-body { grid-template-columns: minmax(0, 1fr); }
+  .map-row select, .imp-step select { max-width: 100%; }
+  .imp-note { font-size: 12.5px; color: var(--ink-2); background: var(--page); border-radius: 8px; padding: 9px 11px; }
+  .imp-note b { color: var(--ink-1); }
+  .imp-warn { border-left: 3px solid var(--warning); }
+  .map-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; max-height: 40vh; overflow-y: auto; padding-right: 4px; }
+  .map-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; gap: 8px; }
+  @media (max-width: 700px) { /* celular: rótulo acima do menu, em coluna única */
+    .map-grid { grid-template-columns: minmax(0, 1fr); max-height: 34vh; }
+    .map-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  }
+  .map-row label { font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+  .map-row select {
+    font-family: inherit; font-size: 12.5px; padding: 5px 7px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--page); color: var(--ink-1); min-width: 0;
+  }
+  .map-row select.unset { color: var(--muted); }
+  .prev-wrap { overflow-x: auto; border: 1px solid var(--grid); border-radius: 8px; }
+  table.prev { border-collapse: collapse; font-size: 11.5px; width: 100%; }
+  table.prev th, table.prev td { padding: 5px 8px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+  table.prev th { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.prev tr:last-child td { border-bottom: 0; }
+  table.prev td.blank { color: var(--muted); }
+  .imp-opts { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .imp-opts label { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+  .imp-step, .modal-body { min-width: 0; }
+  .imp-note, .imp-opts label { overflow-wrap: anywhere; }
+  .imp-opts input[type=checkbox] { accent-color: var(--accent); }
+  .imp-opts input[type=text] {
+    font-family: inherit; font-size: 12.5px; padding: 4px 8px; width: 90px;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--page); color: var(--ink-1);
+  }
+
   /* ---- login ---- */
   #login-screen {
     position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
@@ -363,6 +404,7 @@
       <h2>Banco de coletas</h2>
       <span class="hint" id="coll-hint">Clique numa linha para ver/editar todos os campos.</span>
       <div class="grow"></div>
+      <button class="btn ghost sm" id="btn-imp-coll">Importar planilha</button>
       <button class="btn ghost sm" id="btn-csv-coll">Exportar CSV</button>
       <button class="btn primary sm" id="btn-add-coll">+ Nova coleta</button>
     </div>
@@ -429,6 +471,47 @@
     <button class="btn ghost" type="button" id="login-offline">Continuar offline (dados deste dispositivo)</button>
   </form>
 </div>
+
+<dialog id="import-modal" class="wide">
+  <div class="modal-head" id="imp-title">Importar planilha</div>
+  <div class="modal-body">
+    <!-- passo 1: arquivo -->
+    <div class="imp-step" id="imp-step1">
+      <div class="imp-note">
+        Aceita <b>.csv</b>, <b>.tsv</b> e <b>.xlsx</b>. Nada é enviado para fora: o arquivo é lido aqui no seu dispositivo.
+      </div>
+      <div class="field">
+        <label>Arquivo</label>
+        <input type="file" id="imp-file" accept=".csv,.tsv,.txt,.xlsx">
+      </div>
+      <div class="field" id="imp-sheet-wrap" style="display:none;">
+        <label>Planilha (aba)</label>
+        <select id="imp-sheet"></select>
+      </div>
+      <div class="imp-note imp-warn" id="imp-error" style="display:none;"></div>
+    </div>
+
+    <!-- passo 2: mapeamento -->
+    <div class="imp-step" id="imp-step2" style="display:none;">
+      <div class="imp-note" id="imp-summary"></div>
+      <div>
+        <label style="display:block; font-size:12px; font-weight:650; color:var(--ink-2); margin-bottom:6px;">
+          Campo do app ← coluna da planilha
+        </label>
+        <div class="map-grid" id="imp-map"></div>
+      </div>
+      <div class="imp-opts" id="imp-options"></div>
+      <div>
+        <label style="display:block; font-size:12px; font-weight:650; color:var(--ink-2); margin-bottom:6px;">Prévia</label>
+        <div class="prev-wrap"><table class="prev" id="imp-preview"></table></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn ghost" id="imp-cancel">Cancelar</button>
+    <button type="button" class="btn primary" id="imp-run" disabled>Importar</button>
+  </div>
+</dialog>
 
 <dialog id="modal">
   <div class="modal-head" id="modal-title"></div>
@@ -716,9 +799,12 @@ function openModal({ title, fields, values = {}, onSave, onDelete, onAction }) {
     let ctrl;
     if (f.type === "select") {
       const opt = o => `<option value="${esc(o[0])}" ${o[0] === val ? "selected" : ""}>${esc(o[1])}</option>`;
+      const conhecidos = f.groups ? Object.values(f.groups).flat() : f.options.map(o => o[0]);
+      // valor vindo de planilha que não está na lista: mantém como opção para não se perder
+      const extra = val && !conhecidos.includes(val) ? opt([val, val + " (da planilha)"]) : "";
       const inner = f.groups
-        ? `<option value="">—</option>` + Object.entries(f.groups).map(([g, list]) => `<optgroup label="${esc(g)}">${list.map(v => opt([v, v])).join("")}</optgroup>`).join("")
-        : f.options.map(opt).join("");
+        ? `<option value="">—</option>` + extra + Object.entries(f.groups).map(([g, list]) => `<optgroup label="${esc(g)}">${list.map(v => opt([v, v])).join("")}</optgroup>`).join("")
+        : extra + f.options.map(opt).join("");
       ctrl = `<select name="${f.key}">${inner}</select>`;
     } else if (f.type === "button") {
       if (pendingRow) { wrap.appendChild(pendingRow); pendingRow = null; }
@@ -1085,11 +1171,12 @@ function renderColl() {
   $("#coll-seg [data-sub=ext]").textContent = `Amostras em coleções (${state.samples.length})`;
   $("#btn-add-coll").textContent = collSub === "mine" ? "+ Nova coleta" : "+ Nova amostra";
   const t = $("#coll-table"), empty = $("#coll-empty");
+  const CAP = 400; // desenha no máximo 400 linhas por vez: mantém a tela leve com milhares de registros
   if (collSub === "mine") {
     const rows = state.collections.filter(c => collMatches(c, q))
       .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.code || "").localeCompare(a.code || ""));
     t.innerHTML = rows.length ? `<tr><th>Coleta</th><th>Data</th><th>Tipo</th><th>ID atual</th><th>Hospedeiro</th><th>Grupo</th><th>Localidade</th><th>Voucher / barcode</th><th>Foto</th></tr>` +
-      rows.map(c => `<tr class="rowlink" data-kind="mine" data-id="${c.id}">
+      rows.slice(0, CAP).map(c => `<tr class="rowlink" data-kind="mine" data-id="${c.id}">
         <td style="font-weight:650; white-space:nowrap;">${esc(c.code || "—")}</td>
         <td class="num">${esc(c.date || "—")}</td>
         <td>${esc(c.colltype || "—")}</td>
@@ -1102,12 +1189,13 @@ function renderColl() {
       </tr>`).join("") : "";
     empty.style.display = rows.length ? "none" : "";
     empty.textContent = q ? "Nenhuma coleta corresponde à busca." : "Nenhuma coleta registrada ainda — use “+ Nova coleta” no campo.";
-    $("#coll-count").textContent = `${rows.length} de ${state.collections.length} coletas`;
+    $("#coll-count").textContent = `${rows.length} de ${state.collections.length} coletas`
+      + (rows.length > CAP ? ` · mostrando as ${CAP} primeiras — use a busca para filtrar` : "");
   } else {
     const rows = state.samples.filter(s => collMatches(s, q))
       .sort((a, b) => (a.collection || "").localeCompare(b.collection || "") || (a.currentId || "").localeCompare(b.currentId || ""));
     t.innerHTML = rows.length ? `<tr><th>Coleção</th><th>Fonte</th><th>ID atual</th><th>Hospedeiro</th><th>Grupo</th><th>Localidade</th><th>Coletor · data</th><th>Determinador · data</th></tr>` +
-      rows.map(s => `<tr class="rowlink" data-kind="ext" data-id="${s.id}">
+      rows.slice(0, CAP).map(s => `<tr class="rowlink" data-kind="ext" data-id="${s.id}">
         <td style="font-weight:650; white-space:nowrap;">${esc(s.collection || "—")}</td>
         <td>${esc(s.source || "—")}</td>
         <td><i>${esc(s.currentId || "—")}</i></td>
@@ -1119,7 +1207,8 @@ function renderColl() {
       </tr>`).join("") : "";
     empty.style.display = rows.length ? "none" : "";
     empty.textContent = q ? "Nenhuma amostra corresponde à busca." : "Nenhuma amostra de coleção cadastrada ainda.";
-    $("#coll-count").textContent = `${rows.length} de ${state.samples.length} amostras`;
+    $("#coll-count").textContent = `${rows.length} de ${state.samples.length} amostras`
+      + (rows.length > CAP ? ` · mostrando as ${CAP} primeiras — use a busca para filtrar` : "");
   }
 }
 $("#coll-seg").addEventListener("click", e => {
@@ -1178,6 +1267,427 @@ $("#btn-csv-coll").addEventListener("click", () => {
       ["Fonte", "Coleção", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Coletor", "Data de coleta", "Determinador", "Data de determinação", "Notas"],
       state.samples.map(s => [s.source, s.collection, s.currentId, s.host, s.hostGroup, s.locality, s.lat, s.lon, s.collector, s.collDate, s.determiner, s.detDate, s.notes]));
   }
+});
+
+/* ================= importação de planilhas (CSV / TSV / XLSX) =================
+ * Lê o arquivo no próprio dispositivo, adivinha o mapeamento das colunas,
+ * deixa ajustar à mão e mostra uma prévia antes de gravar. */
+
+/* --- leitura de arquivos --- */
+function decodeText(buf) {
+  let txt = new TextDecoder("utf-8").decode(buf);
+  if (txt.includes("�")) txt = new TextDecoder("windows-1252").decode(buf); // Excel/Windows
+  return txt.replace(/^﻿/, "");
+}
+function detectDelim(line) {
+  const counts = [";", ",", "\t", "|"].map(d => [d, (line.match(new RegExp("\\" + d, "g")) || []).length]);
+  counts.sort((a, b) => b[1] - a[1]);
+  return counts[0][1] ? counts[0][0] : ",";
+}
+function parseCSV(text, delim) {
+  const rows = []; let row = [], field = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false; }
+      else field += ch;
+    } else if (ch === '"' && field === "") quoted = true; // aspas só delimitam no início do campo:
+    else if (ch === delim) { row.push(field); field = ""; } // assim 2°55'47.2" continua sendo texto
+    else if (ch === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (ch !== "\r") field += ch;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(c => String(c).trim() !== ""));
+}
+async function inflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function unzip(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= 0 && i > u8.length - 22 - 65536; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("arquivo .xlsx inválido");
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  const files = new Map();
+  for (let i = 0; i < count; i++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const csize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const commLen = dv.getUint16(off + 32, true);
+    const lho = dv.getUint32(off + 42, true);
+    const name = new TextDecoder().decode(u8.subarray(off + 46, off + 46 + nameLen));
+    const dataAt = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true);
+    const raw = u8.subarray(dataAt, dataAt + csize);
+    files.set(name, method === 0 ? raw : await inflateRaw(raw));
+    off += 46 + nameLen + extraLen + commLen;
+  }
+  return files;
+}
+const colIndex = ref => [...ref].reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
+async function readXLSX(buf) {
+  if (typeof DecompressionStream === "undefined") throw new Error("Este navegador não abre .xlsx — exporte a planilha como CSV.");
+  const files = await unzip(buf);
+  const dec = new TextDecoder(), dp = new DOMParser();
+  const xml = path => dp.parseFromString(dec.decode(files.get(path)), "application/xml");
+  const shared = [];
+  if (files.has("xl/sharedStrings.xml")) {
+    xml("xl/sharedStrings.xml").querySelectorAll("si").forEach(si => {
+      shared.push([...si.querySelectorAll("t")].map(t => t.textContent).join(""));
+    });
+  }
+  const rels = {};
+  if (files.has("xl/_rels/workbook.xml.rels")) {
+    xml("xl/_rels/workbook.xml.rels").querySelectorAll("Relationship").forEach(r => {
+      rels[r.getAttribute("Id")] = r.getAttribute("Target");
+    });
+  }
+  const sheets = [];
+  xml("xl/workbook.xml").querySelectorAll("sheets > sheet").forEach((s, i) => {
+    const rid = s.getAttribute("r:id");
+    let target = rels[rid] || `worksheets/sheet${i + 1}.xml`;
+    target = target.startsWith("/") ? target.slice(1) : "xl/" + target.replace(/^\.?\//, "");
+    if (!files.has(target)) target = `xl/worksheets/sheet${i + 1}.xml`;
+    if (!files.has(target)) return;
+    const doc = xml(target), rows = [];
+    doc.querySelectorAll("sheetData > row").forEach(r => {
+      const arr = [];
+      r.querySelectorAll("c").forEach(c => {
+        const idx = colIndex((c.getAttribute("r") || "A").replace(/[0-9]/g, ""));
+        const t = c.getAttribute("t");
+        let v = "";
+        if (t === "inlineStr") v = [...c.querySelectorAll("t")].map(x => x.textContent).join("");
+        else {
+          const el = c.querySelector("v");
+          v = el ? el.textContent : "";
+          if (t === "s") v = shared[+v] ?? "";
+        }
+        arr[idx] = v;
+      });
+      rows.push(arr);
+    });
+    const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
+    sheets.push({
+      name: s.getAttribute("name") || `Planilha ${i + 1}`,
+      rows: rows.map(r => Array.from({ length: width }, (_, k) => r[k] ?? "")),
+    });
+  });
+  return sheets;
+}
+
+/* --- normalização de valores --- */
+const normTxt = s => String(s ?? "").toLowerCase().normalize("NFD")
+  .replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const BLANKS = new Set(["", "na", "n a", "nd", "n d", "null", "none", "sem dados", "-", "--", "?"]);
+const isBlank = v => BLANKS.has(normTxt(v));
+const clean = v => (isBlank(v) ? "" : String(v).trim());
+const pad2 = n => String(n).padStart(2, "0");
+
+function toISODate(v) {
+  const s = clean(v);
+  if (!s) return "";
+  if (/^\d{5}(\.\d+)?$/.test(s)) { // número de série do Excel (base 1899-12-30)
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(parseFloat(s)) * 86400000);
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  }
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if (m) {
+    let [, a, b, y] = m;
+    if (+y < 100) y = String(+y + (+y > 50 ? 1900 : 2000));
+    if (+b > 12 && +a <= 12) [a, b] = [b, a];      // arquivo em mm/dd
+    return `${y}-${pad2(b)}-${pad2(a)}`;            // padrão brasileiro dd/mm
+  }
+  const t = Date.parse(s);
+  if (!isNaN(t)) { const d = new Date(t); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+  return s; // não reconhecida: preserva o texto original
+}
+function toCoord(v, hemi) {
+  let s = clean(v);
+  if (!s) return "";
+  let sign = 1;
+  const h = (clean(hemi) || (s.match(/[NSEWLO]\s*$/i) || [""])[0]).toUpperCase().trim();
+  if (h === "S" || h === "W" || h === "O") sign = -1;
+  s = s.replace(/[NSEWLO]\s*$/i, "").trim();
+  const dms = s.match(/^(-?\d+(?:[.,]\d+)?)\s*[°º:\s]\s*(\d+(?:[.,]\d+)?)?\s*['′:\s]?\s*(\d+(?:[.,]\d+)?)?\s*["″]?$/);
+  if (dms) {
+    const [, dd, mm, ss] = dms;
+    const deg = Math.abs(parseFloat(dd.replace(",", ".")));
+    const val = deg + (parseFloat((mm || "0").replace(",", ".")) / 60) + (parseFloat((ss || "0").replace(",", ".")) / 3600);
+    const neg = parseFloat(dd.replace(",", ".")) < 0 ? -1 : 1;
+    return String(+(sign * neg * val).toFixed(6));
+  }
+  const num = parseFloat(s.replace(",", "."));
+  return isNaN(num) ? "" : String(+(sign * Math.abs(num) * (num < 0 ? -1 : 1)).toFixed(6));
+}
+const YES = new Set(["sim", "s", "yes", "y", "true", "1", "x", "ok", "verdadeiro"]);
+const toYesNo = v => (YES.has(normTxt(v)) ? "sim" : "nao");
+
+const HOST_FLAT = Object.values(HOST_GROUPS).flat();
+function matchHostGroup(v) {
+  const s = clean(v);
+  if (!s) return "";
+  const n = normTxt(s);
+  return HOST_FLAT.find(g => normTxt(g) === n)
+    || HOST_FLAT.find(g => normTxt(g).split(" ").includes(n))
+    || HOST_FLAT.find(g => normTxt(g).includes(n))
+    || s; // desconhecido: mantém o texto da planilha
+}
+function matchFromList(v, list) {
+  const s = clean(v);
+  if (!s) return "";
+  const n = normTxt(s);
+  return list.find(o => normTxt(o) === n) || list.find(o => normTxt(o).includes(n)) || s;
+}
+
+/* --- campos e apelidos de cabeçalho --- */
+const IMPORT_FIELDS = {
+  mine: [
+    { key: "date", label: "Data", kind: "date", aliases: ["data", "date", "data de coleta", "coll date", "collection date", "eventdate"] },
+    { key: "code", label: "Coleta (código)", kind: "code", aliases: ["coleta", "codigo", "code", "taj", "coll id", "collection number", "numero", "n coleta", "collector number", "recordnumber", "cod"] },
+    { key: "colltype", label: "Tipo da coleção", kind: "list", list: COLL_TYPES, aliases: ["tipo da colecao", "tipo", "type", "collection type", "collection"] },
+    { key: "voucher", label: "Voucher de herbário", aliases: ["voucher", "voucher de herbario", "herbarium voucher", "exsicata", "catalognumber"] },
+    { key: "barcode", label: "Barcode de herbário", aliases: ["barcode", "barcode de herbario", "herbarium barcode", "codigo de barras"] },
+    { key: "photographed", label: "Fotografado", kind: "bool", aliases: ["fotografado", "foto", "photo", "photographed", "imagem", "image"] },
+    { key: "currentId", label: "ID atual", aliases: ["id atual", "id", "identificacao", "determination", "species", "especie", "scientific name", "nome cientifico", "taxon", "fungi", "fungus"] },
+    { key: "host", label: "Hospedeiro", aliases: ["hospedeiro", "host", "insect", "subunit insect", "inseto"] },
+    { key: "hostGroup", label: "Grupo do hospedeiro", kind: "hostgroup", aliases: ["grupo do hospedeiro", "grupo", "host group", "hosttaxgroup", "host tax group", "ordem", "order", "classe", "class", "host order", "hosttype"] },
+    { key: "locality", label: "Localidade", aliases: ["localidade", "local", "locality", "location", "site", "municipio", "county", "countymunicip", "place"] },
+    { key: "lat", label: "Latitude", kind: "coord", hemiAliases: ["ns", "hemisferio", "hemisphere"], aliases: ["decimallatitude", "ddlat", "latitude", "lat", "dmslat", "y"] },
+    { key: "lon", label: "Longitude", kind: "coord", hemiAliases: ["ew", "we"], aliases: ["decimallongitude", "ddlong", "longitude", "lon", "long", "lng", "dmslong", "x"] },
+    { key: "substrate", label: "Substrato", aliases: ["substrato", "substrate", "plant", "planta", "subunit int bryo", "subunit ext bryo", "bryo"] },
+    { key: "notes", label: "Notas", aliases: ["notas", "nota", "notes", "obs", "observacoes", "remarks", "comentarios", "occurrenceremarks"] },
+  ],
+  ext: [
+    { key: "source", label: "Fonte", aliases: ["fonte", "source", "origem", "basisofrecord"] },
+    { key: "collection", label: "Coleção", aliases: ["colecao", "collection", "herbario", "herbarium", "institutioncode", "collectioncode", "acronimo"] },
+    { key: "currentId", label: "ID atual", aliases: ["id atual", "id", "identificacao", "determination", "species", "especie", "scientific name", "nome cientifico", "taxon", "fungi"] },
+    { key: "host", label: "Hospedeiro", aliases: ["hospedeiro", "host", "insect", "inseto"] },
+    { key: "hostGroup", label: "Grupo do hospedeiro", kind: "hostgroup", aliases: ["grupo do hospedeiro", "grupo", "host group", "hosttaxgroup", "ordem", "order", "classe", "class", "hosttype"] },
+    { key: "locality", label: "Localidade", aliases: ["localidade", "local", "locality", "location", "site", "municipio", "county", "place"] },
+    { key: "lat", label: "Latitude", kind: "coord", hemiAliases: ["ns", "hemisferio"], aliases: ["decimallatitude", "ddlat", "latitude", "lat", "dmslat"] },
+    { key: "lon", label: "Longitude", kind: "coord", hemiAliases: ["ew", "we"], aliases: ["decimallongitude", "ddlong", "longitude", "lon", "long", "lng", "dmslong"] },
+    { key: "collector", label: "Coletor", aliases: ["coletor", "collector", "recordedby", "leg", "legit", "addcoll"] },
+    { key: "collDate", label: "Data de coleta", kind: "datefree", aliases: ["data de coleta", "data", "date", "collection date", "eventdate"] },
+    { key: "determiner", label: "Determinador", aliases: ["determinador", "determiner", "identifiedby", "det", "detby"] },
+    { key: "detDate", label: "Data de determinação", kind: "datefree", aliases: ["data de determinacao", "det date", "dateidentified", "data det"] },
+    { key: "notes", label: "Notas", aliases: ["notas", "nota", "notes", "obs", "observacoes", "remarks"] },
+  ],
+};
+
+/* --- estado da importação --- */
+let impRows = null, impHeaders = [], impSheets = null, impMap = {}, impHemi = {};
+
+function autoMap(headers, fields, rows = []) {
+  const norm = headers.map(normTxt);
+  const sample = rows.slice(0, 300);
+  const hasData = i => i >= 0 && sample.some(r => !isBlank(r[i]));
+  const map = {}, used = new Set();
+  fields.forEach(f => {
+    // a ordem dos apelidos é a ordem de preferência (ex.: DDLat antes de DMSLat),
+    // mas uma coluna vazia perde para outra que realmente tenha dados.
+    const pool = [f.key, f.label, ...(f.aliases || [])].map(normTxt);
+    const exatos = [];
+    pool.forEach(alias => {
+      const i = norm.findIndex((h, k) => !used.has(k) && h === alias);
+      if (i >= 0 && !exatos.includes(i)) exatos.push(i);
+    });
+    const aprox = norm.reduce((acc, h, i) => {
+      if (!used.has(i) && h && !exatos.includes(i) && pool.some(a => a.length > 3 && (h.startsWith(a) || a.startsWith(h)))) acc.push(i);
+      return acc;
+    }, []);
+    const cands = [...exatos, ...aprox];
+    const idx = cands.find(hasData) ?? cands[0];
+    if (idx !== undefined) { map[f.key] = idx; used.add(idx); }
+  });
+  return map;
+}
+function autoHemi(headers, fields, rows = [], map = {}) {
+  const norm = headers.map(normTxt);
+  const sample = rows.slice(0, 300);
+  // coluna de hemisfério: só letras N/S/E/W/L/O (às vezes vem sem cabeçalho, ao lado da coordenada)
+  const pareceHemi = i => {
+    if (i < 0 || i >= headers.length) return false;
+    const vals = sample.map(r => r[i]).filter(v => !isBlank(v));
+    return vals.length > 0 && vals.every(v => /^[nsewlo]$/.test(normTxt(v)));
+  };
+  const hemi = {};
+  fields.forEach(f => {
+    if (!f.hemiAliases) return;
+    let i = norm.findIndex(h => f.hemiAliases.includes(h));
+    if (i < 0 && map[f.key] !== undefined && pareceHemi(map[f.key] + 1)) i = map[f.key] + 1;
+    if (i >= 0) hemi[f.key] = i;
+  });
+  return hemi;
+}
+function impValue(field, row) {
+  const idx = impMap[field.key];
+  if (idx === undefined || idx < 0) return "";
+  const raw = row[idx];
+  switch (field.kind) {
+    case "date": return toISODate(raw);
+    case "datefree": { const s = clean(raw); return /^\d{5}(\.\d+)?$/.test(s) ? toISODate(s) : s; }
+    case "coord": return toCoord(raw, impHemi[field.key] !== undefined ? row[impHemi[field.key]] : "");
+    case "bool": return toYesNo(raw);
+    case "hostgroup": return matchHostGroup(raw);
+    case "list": return matchFromList(raw, field.list);
+    case "code": {
+      const s = clean(raw);
+      const prefix = (document.querySelector("#imp-prefix")?.value || "").trim();
+      return s && prefix && /^\d+$/.test(s) ? prefix + s : s;
+    }
+    default: return clean(raw);
+  }
+}
+
+/* --- interface --- */
+const impModal = $("#import-modal");
+function impReset() {
+  impRows = null; impSheets = null; impHeaders = []; impMap = {}; impHemi = {};
+  $("#imp-step1").style.display = ""; $("#imp-step2").style.display = "none";
+  $("#imp-sheet-wrap").style.display = "none"; $("#imp-error").style.display = "none";
+  $("#imp-file").value = ""; $("#imp-run").disabled = true;
+  $("#imp-title").textContent = collSub === "mine" ? "Importar planilha de coletas" : "Importar planilha de amostras";
+}
+function impError(msg) {
+  const el = $("#imp-error");
+  el.textContent = msg; el.style.display = "";
+  $("#imp-step2").style.display = "none"; $("#imp-run").disabled = true;
+}
+$("#btn-imp-coll").addEventListener("click", () => { impReset(); impModal.showModal(); });
+$("#imp-cancel").addEventListener("click", () => impModal.close());
+
+$("#imp-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  $("#imp-error").style.display = "none";
+  try {
+    const buf = await file.arrayBuffer();
+    if (/\.xlsx$/i.test(file.name)) {
+      impSheets = await readXLSX(buf);
+      if (!impSheets.length) return impError("Nenhuma planilha encontrada no arquivo.");
+      const sel = $("#imp-sheet");
+      sel.innerHTML = impSheets.map((s, i) => `<option value="${i}">${esc(s.name)} — ${Math.max(0, s.rows.length - 1)} linhas</option>`).join("");
+      $("#imp-sheet-wrap").style.display = "";
+      const biggest = impSheets.reduce((best, s, i) => (s.rows.length > impSheets[best].rows.length ? i : best), 0);
+      sel.value = String(biggest);
+      impUseRows(impSheets[biggest].rows);
+    } else {
+      const text = decodeText(buf);
+      const firstLine = text.split("\n")[0] || "";
+      impUseRows(parseCSV(text, /\.tsv$/i.test(file.name) ? "\t" : detectDelim(firstLine)));
+    }
+  } catch (err) {
+    impError("Não foi possível ler o arquivo: " + err.message);
+  }
+});
+$("#imp-sheet").addEventListener("change", e => impUseRows(impSheets[+e.target.value].rows));
+
+function impUseRows(rows) {
+  if (!rows || rows.length < 2) return impError("A planilha precisa de uma linha de cabeçalho e ao menos uma linha de dados.");
+  impHeaders = rows[0].map(h => String(h ?? "").trim());
+  impRows = rows.slice(1).filter(r => r.some(c => String(c ?? "").trim() !== ""));
+  const fields = IMPORT_FIELDS[collSub];
+  impMap = autoMap(impHeaders, fields, impRows);
+  impHemi = autoHemi(impHeaders, fields, impRows, impMap);
+  impRenderMapping();
+}
+
+function impRenderMapping() {
+  const fields = IMPORT_FIELDS[collSub];
+  const nMapped = Object.keys(impMap).length;
+  $("#imp-summary").innerHTML = `<b>${impRows.length}</b> linhas encontradas · <b>${impHeaders.length}</b> colunas · `
+    + `<b>${nMapped}</b> ${nMapped === 1 ? "campo reconhecido" : "campos reconhecidos"} automaticamente. Confira e ajuste abaixo.`;
+
+  const opts = i => impHeaders.map((h, k) => `<option value="${k}" ${k === i ? "selected" : ""}>${esc(h || "coluna " + (k + 1))}</option>`).join("");
+  $("#imp-map").innerHTML = fields.map(f => {
+    const i = impMap[f.key] ?? -1;
+    return `<div class="map-row">
+      <label>${esc(f.label)}</label>
+      <select data-field="${f.key}" class="${i < 0 ? "unset" : ""}">
+        <option value="-1" ${i < 0 ? "selected" : ""}>— ignorar —</option>${opts(i)}
+      </select>
+    </div>`;
+  }).join("");
+
+  const codeMapped = impMap.code !== undefined;
+  const numericCodes = codeMapped && impRows.slice(0, 20).some(r => /^\d+$/.test(clean(r[impMap.code])));
+  const guess = codeMapped ? (impHeaders[impMap.code] || "").trim().toUpperCase().replace(/[^A-Z]/g, "") : "";
+  $("#imp-options").innerHTML = `
+    ${collSub === "mine" ? `<label><input type="checkbox" id="imp-skipdup" checked> Ignorar códigos repetidos (já existentes no app ou duplicados dentro do arquivo)</label>` : ""}
+    ${collSub === "mine" && numericCodes ? `<label>Prefixo para códigos numéricos:
+      <input type="text" id="imp-prefix" value="${esc(guess.length <= 5 ? guess : "")}" placeholder="ex: TAJ"> <span style="color:var(--muted)">(vira ${esc(guess || "TAJ")}30)</span></label>` : ""}
+    <label><input type="checkbox" id="imp-extras" checked> Guardar colunas não mapeadas nas Notas (não perde informação)</label>`;
+  $("#imp-map").querySelectorAll("select").forEach(s => s.addEventListener("change", ev => {
+    const v = +ev.target.value;
+    if (v < 0) delete impMap[ev.target.dataset.field]; else impMap[ev.target.dataset.field] = v;
+    ev.target.classList.toggle("unset", v < 0);
+    impRenderPreview();
+  }));
+  ["imp-prefix", "imp-extras", "imp-skipdup"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", impRenderPreview);
+  });
+  $("#imp-step1").style.display = "none";
+  $("#imp-step2").style.display = "";
+  $("#imp-run").disabled = false;
+  impRenderPreview();
+}
+
+function impBuildRow(row) {
+  const fields = IMPORT_FIELDS[collSub];
+  const obj = {};
+  fields.forEach(f => { obj[f.key] = impValue(f, row); });
+  if (document.querySelector("#imp-extras")?.checked) {
+    const usados = new Set([...Object.values(impMap), ...Object.values(impHemi)]);
+    const extras = impHeaders.map((h, i) => (!usados.has(i) && !isBlank(row[i]) ? `${h || "col" + (i + 1)}: ${String(row[i]).trim()}` : null))
+      .filter(Boolean).join(" · ");
+    if (extras) obj.notes = obj.notes ? obj.notes + "\n" + extras : extras;
+  }
+  return obj;
+}
+function impRenderPreview() {
+  const fields = IMPORT_FIELDS[collSub].filter(f => impMap[f.key] !== undefined);
+  const show = fields.length ? fields : IMPORT_FIELDS[collSub].slice(0, 5);
+  const rows = impRows.slice(0, 3).map(impBuildRow);
+  $("#imp-preview").innerHTML =
+    `<tr>${show.map(f => `<th>${esc(f.label)}</th>`).join("")}</tr>` +
+    rows.map(o => `<tr>${show.map(f => {
+      const v = o[f.key];
+      return `<td class="${v ? "" : "blank"}" title="${esc(v)}">${v ? esc(v) : "—"}</td>`;
+    }).join("")}</tr>`).join("");
+  $("#imp-run").textContent = `Importar ${impRows.length} ${impRows.length === 1 ? "registro" : "registros"}`;
+}
+
+$("#imp-run").addEventListener("click", () => {
+  if (!impRows?.length) return;
+  const skipDup = document.querySelector("#imp-skipdup")?.checked;
+  const existing = new Set(state.collections.map(c => normTxt(c.code)).filter(Boolean));
+  let added = 0, skipped = 0, noDate = 0;
+  impRows.forEach(row => {
+    const obj = impBuildRow(row);
+    if (collSub === "mine") {
+      if (skipDup && obj.code && existing.has(normTxt(obj.code))) { skipped++; return; }
+      if (obj.code) existing.add(normTxt(obj.code));
+      // só conta como problema se havia data escrita mas não foi reconhecida (célula vazia não é erro)
+      if (impMap.date !== undefined && !isBlank(row[impMap.date]) && !/^\d{4}-\d{2}-\d{2}$/.test(obj.date)) noDate++;
+      state.collections.push({ id: uid(), ...obj });
+    } else {
+      state.samples.push({ id: uid(), ...obj });
+    }
+    added++;
+  });
+  save(); renderColl(); renderDash();
+  impModal.close();
+  alert(`✅ ${added} ${added === 1 ? "registro importado" : "registros importados"}.`
+    + (skipped ? `\n${skipped} ignorado(s) por código repetido.` : "")
+    + (noDate ? `\n${noDate} com data em formato não reconhecido (texto preservado).` : ""));
 });
 
 /* ================= painel ================= */
