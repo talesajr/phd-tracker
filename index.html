@@ -258,6 +258,11 @@
     flex: 1; min-width: 220px; font-family: inherit; font-size: 13.5px; padding: 8px 12px;
     border: 1px solid var(--border); border-radius: 9px; background: var(--surface-1); color: var(--ink-1);
   }
+  table.tbl th.sortable { cursor: pointer; user-select: none; }
+  table.tbl th.sortable:hover { color: var(--ink-1); background: var(--page); }
+  table.tbl th.sortable .arrow { margin-left: 4px; font-size: 8.5px; opacity: 0.35; }
+  table.tbl th.sortable.sorted { color: var(--ink-1); }
+  table.tbl th.sortable.sorted .arrow { opacity: 1; color: var(--accent); }
   table.tbl tr.rowlink { cursor: pointer; }
   table.tbl tr.rowlink:hover td { background: var(--page); }
   .coords { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1164,6 +1169,57 @@ const gpsAction = act => {
 function collMatches(obj, q) {
   return !q || Object.values(obj).join(" ").toLowerCase().includes(q);
 }
+/* Colunas da tabela: cabeçalho, célula e ordenação definidos num lugar só.
+ * type: "nat" = ordem natural (TAJ9 < TAJ30 < TAJ178), "date" = ISO, "txt" = alfabética. */
+const COLL_COLS = {
+  mine: [
+    { key: "code", label: "Coleta", type: "nat", cell: c => `<span style="font-weight:650; white-space:nowrap;">${esc(c.code || "—")}</span>` },
+    { key: "date", label: "Data", type: "date", cls: "num", cell: c => esc(c.date || "—") },
+    { key: "colltype", label: "Tipo", type: "txt", cell: c => esc(c.colltype || "—") },
+    { key: "currentId", label: "ID atual", type: "txt", cell: c => `<i>${esc(c.currentId || "—")}</i>` },
+    { key: "host", label: "Hospedeiro", type: "txt", cell: c => esc(c.host || "—") },
+    { key: "hostGroup", label: "Grupo", type: "txt", cell: c => esc(c.hostGroup || "—") },
+    { key: "locality", label: "Localidade", type: "txt", cell: c => `${esc(c.locality || "—")}${(c.lat || c.lon) ? `<div class="coords">${esc(c.lat)}, ${esc(c.lon)}</div>` : ""}` },
+    { key: "voucher", label: "Voucher / barcode", type: "nat", cell: c => `${esc(c.voucher || "—")}${c.barcode ? `<div class="coords">${esc(c.barcode)}</div>` : ""}` },
+    { key: "photographed", label: "Foto", type: "txt", cell: c => (c.photographed === "sim" ? "📷" : "—"), sortVal: c => (c.photographed === "sim" ? "1" : "") },
+  ],
+  ext: [
+    { key: "collection", label: "Coleção", type: "nat", cell: s => `<span style="font-weight:650; white-space:nowrap;">${esc(s.collection || "—")}</span>` },
+    { key: "source", label: "Fonte", type: "txt", cell: s => esc(s.source || "—") },
+    { key: "currentId", label: "ID atual", type: "txt", cell: s => `<i>${esc(s.currentId || "—")}</i>` },
+    { key: "host", label: "Hospedeiro", type: "txt", cell: s => esc(s.host || "—") },
+    { key: "hostGroup", label: "Grupo", type: "txt", cell: s => esc(s.hostGroup || "—") },
+    { key: "locality", label: "Localidade", type: "txt", cell: s => `${esc(s.locality || "—")}${(s.lat || s.lon) ? `<div class="coords">${esc(s.lat)}, ${esc(s.lon)}</div>` : ""}` },
+    { key: "collector", label: "Coletor · data", type: "txt", cell: s => `${esc(s.collector || "—")}${s.collDate ? `<div class="coords">${esc(s.collDate)}</div>` : ""}` },
+    { key: "determiner", label: "Determinador · data", type: "txt", cell: s => `${esc(s.determiner || "—")}${s.detDate ? `<div class="coords">${esc(s.detDate)}</div>` : ""}` },
+  ],
+};
+const collSort = { mine: { key: "date", dir: "desc" }, ext: { key: "collection", dir: "asc" } };
+
+function sortColl(rows, cols, sort) {
+  const col = cols.find(c => c.key === sort.key) || cols[0];
+  const val = r => String((col.sortVal ? col.sortVal(r) : r[col.key]) ?? "").trim();
+  const fator = sort.dir === "desc" ? -1 : 1;
+  return [...rows].sort((x, y) => {
+    const a = val(x), b = val(y);
+    if (!a || !b) return a === b ? 0 : (a ? -1 : 1); // vazios sempre no fim, nos dois sentidos
+    const base = col.type === "nat"
+      ? a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: "base" })
+      : col.type === "date" ? a.localeCompare(b)
+      : a.localeCompare(b, "pt-BR", { sensitivity: "base" });
+    return base * fator || String(x.code || x.collection || "").localeCompare(String(y.code || y.collection || ""), "pt-BR", { numeric: true });
+  });
+}
+function collHeader(cols, sort) {
+  return "<tr>" + cols.map(c => {
+    const atual = c.key === sort.key;
+    const seta = atual ? (sort.dir === "asc" ? "▲" : "▼") : "▾";
+    return `<th class="sortable ${atual ? "sorted" : ""} ${c.cls === "num" ? "num" : ""}" data-sort="${c.key}"
+      aria-sort="${atual ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}"
+      title="Ordenar por ${esc(c.label)}">${esc(c.label)}<span class="arrow">${seta}</span></th>`;
+  }).join("") + "</tr>";
+}
+
 function renderColl() {
   const q = collQuery.toLowerCase().trim();
   document.querySelectorAll("#coll-seg button").forEach(b => b.classList.toggle("active", b.dataset.sub === collSub));
@@ -1172,44 +1228,19 @@ function renderColl() {
   $("#btn-add-coll").textContent = collSub === "mine" ? "+ Nova coleta" : "+ Nova amostra";
   const t = $("#coll-table"), empty = $("#coll-empty");
   const CAP = 400; // desenha no máximo 400 linhas por vez: mantém a tela leve com milhares de registros
-  if (collSub === "mine") {
-    const rows = state.collections.filter(c => collMatches(c, q))
-      .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.code || "").localeCompare(a.code || ""));
-    t.innerHTML = rows.length ? `<tr><th>Coleta</th><th>Data</th><th>Tipo</th><th>ID atual</th><th>Hospedeiro</th><th>Grupo</th><th>Localidade</th><th>Voucher / barcode</th><th>Foto</th></tr>` +
-      rows.slice(0, CAP).map(c => `<tr class="rowlink" data-kind="mine" data-id="${c.id}">
-        <td style="font-weight:650; white-space:nowrap;">${esc(c.code || "—")}</td>
-        <td class="num">${esc(c.date || "—")}</td>
-        <td>${esc(c.colltype || "—")}</td>
-        <td><i>${esc(c.currentId || "—")}</i></td>
-        <td>${esc(c.host || "—")}</td>
-        <td>${esc(c.hostGroup || "—")}</td>
-        <td>${esc(c.locality || "—")}${(c.lat || c.lon) ? `<div class="coords">${esc(c.lat)}, ${esc(c.lon)}</div>` : ""}</td>
-        <td>${esc(c.voucher || "—")}${c.barcode ? `<div class="coords">${esc(c.barcode)}</div>` : ""}</td>
-        <td>${c.photographed === "sim" ? "📷" : "—"}</td>
-      </tr>`).join("") : "";
-    empty.style.display = rows.length ? "none" : "";
-    empty.textContent = q ? "Nenhuma coleta corresponde à busca." : "Nenhuma coleta registrada ainda — use “+ Nova coleta” no campo.";
-    $("#coll-count").textContent = `${rows.length} de ${state.collections.length} coletas`
-      + (rows.length > CAP ? ` · mostrando as ${CAP} primeiras — use a busca para filtrar` : "");
-  } else {
-    const rows = state.samples.filter(s => collMatches(s, q))
-      .sort((a, b) => (a.collection || "").localeCompare(b.collection || "") || (a.currentId || "").localeCompare(b.currentId || ""));
-    t.innerHTML = rows.length ? `<tr><th>Coleção</th><th>Fonte</th><th>ID atual</th><th>Hospedeiro</th><th>Grupo</th><th>Localidade</th><th>Coletor · data</th><th>Determinador · data</th></tr>` +
-      rows.slice(0, CAP).map(s => `<tr class="rowlink" data-kind="ext" data-id="${s.id}">
-        <td style="font-weight:650; white-space:nowrap;">${esc(s.collection || "—")}</td>
-        <td>${esc(s.source || "—")}</td>
-        <td><i>${esc(s.currentId || "—")}</i></td>
-        <td>${esc(s.host || "—")}</td>
-        <td>${esc(s.hostGroup || "—")}</td>
-        <td>${esc(s.locality || "—")}${(s.lat || s.lon) ? `<div class="coords">${esc(s.lat)}, ${esc(s.lon)}</div>` : ""}</td>
-        <td>${esc(s.collector || "—")}${s.collDate ? `<div class="coords">${esc(s.collDate)}</div>` : ""}</td>
-        <td>${esc(s.determiner || "—")}${s.detDate ? `<div class="coords">${esc(s.detDate)}</div>` : ""}</td>
-      </tr>`).join("") : "";
-    empty.style.display = rows.length ? "none" : "";
-    empty.textContent = q ? "Nenhuma amostra corresponde à busca." : "Nenhuma amostra de coleção cadastrada ainda.";
-    $("#coll-count").textContent = `${rows.length} de ${state.samples.length} amostras`
-      + (rows.length > CAP ? ` · mostrando as ${CAP} primeiras — use a busca para filtrar` : "");
-  }
+  const mine = collSub === "mine";
+  const cols = COLL_COLS[collSub], sort = collSort[collSub];
+  const base = mine ? state.collections : state.samples;
+  const rows = sortColl(base.filter(r => collMatches(r, q)), cols, sort);
+  t.innerHTML = rows.length ? collHeader(cols, sort) +
+    rows.slice(0, CAP).map(r => `<tr class="rowlink" data-kind="${collSub}" data-id="${r.id}">`
+      + cols.map(c => `<td class="${c.cls || ""}">${c.cell(r)}</td>`).join("") + `</tr>`).join("") : "";
+  empty.style.display = rows.length ? "none" : "";
+  empty.textContent = q
+    ? (mine ? "Nenhuma coleta corresponde à busca." : "Nenhuma amostra corresponde à busca.")
+    : (mine ? "Nenhuma coleta registrada ainda — use “+ Nova coleta” no campo." : "Nenhuma amostra de coleção cadastrada ainda.");
+  $("#coll-count").textContent = `${rows.length} de ${base.length} ${mine ? "coletas" : "amostras"}`
+    + (rows.length > CAP ? ` · mostrando as ${CAP} primeiras — use a busca para filtrar` : "");
 }
 $("#coll-seg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -1217,6 +1248,15 @@ $("#coll-seg").addEventListener("click", e => {
 });
 $("#coll-search").addEventListener("input", e => { collQuery = e.target.value; renderColl(); });
 $("#coll-table").addEventListener("click", e => {
+  const th = e.target.closest("th[data-sort]");
+  if (th) {
+    const sort = collSort[collSub], key = th.dataset.sort;
+    // mesma coluna: inverte o sentido. Coluna nova: datas começam da mais recente, o resto de A a Z.
+    if (sort.key === key) sort.dir = sort.dir === "asc" ? "desc" : "asc";
+    else { sort.key = key; sort.dir = key === "date" ? "desc" : "asc"; }
+    renderColl();
+    return;
+  }
   const row = e.target.closest("tr.rowlink"); if (!row) return;
   if (row.dataset.kind === "mine") {
     const c = state.collections.find(x => x.id === row.dataset.id);
