@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'Backend trocável: adiciona suporte a Firebase \\(Google Cloud\\) ao lado do Supabase *)",
+      "Bash(git push *)"
+    ]
+  }
+}

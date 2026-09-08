@@ -1,0 +1,20 @@
+// Regras de segurança do Firestore para o PhD Tracker.
+// Onde colar: console.firebase.google.com → Firestore Database → aba "Regras" → Publicar.
+//
+// Cada usuário só enxerga e grava o próprio documento (o id do documento é o uid
+// da conta). Sem login, ninguém lê nada — é o banco que garante isso, não o app.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /app_state/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Qualquer outro caminho fica bloqueado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

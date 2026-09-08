@@ -534,12 +534,22 @@
 "use strict";
 /* ================= dados ================= */
 const LS_KEY = "phd-tracker-v1";
-/* Backend (Supabase): crie o projeto, rode supabase/setup.sql no SQL Editor
- * e cole aqui a Project URL e a chave anon/publishable (Settings → API Keys).
+/* Backend — preencha UM dos dois blocos (o Firebase tem prioridade).
+ * Firebase (Google Cloud): console.firebase.google.com → Configurações do projeto
+ *   → Seus apps → apiKey e projectId. Regras de segurança em firebase/firestore.rules.
+ * Supabase: Project URL + chave publishable (Settings → API Keys).
  * Com os dois vazios o app funciona 100% local, sem login. */
-const SUPABASE_URL = "https://vrrcvuzdajoefcfhogqo.supabase.co";
-const SUPABASE_KEY = "sb_publishable_nYHy8JJLVi3nC3HLbQnKdw_KAYFDPxL";
-const API_ON = SUPABASE_URL !== "" && SUPABASE_KEY !== "";
+const FIREBASE = {
+  apiKey: "",
+  projectId: "",
+};
+const SUPABASE = {
+  url: "https://vrrcvuzdajoefcfhogqo.supabase.co",
+  key: "sb_publishable_nYHy8JJLVi3nC3HLbQnKdw_KAYFDPxL",
+};
+const BACKEND = FIREBASE.apiKey && FIREBASE.projectId ? "firebase"
+  : SUPABASE.url && SUPABASE.key ? "supabase" : null;
+const API_ON = BACKEND !== null;
 const TOKEN_KEY = "phd-tracker-session";
 const QUARTERS = [];
 for (let y = 2026; y <= 2030; y++) for (let q = 1; q <= 4; q++) {
@@ -551,7 +561,7 @@ const qLabel = k => k.replace("Q", " · Q").replace(/^(\d{4})/, "$1").split(" ·
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 function seed() {
-  /* O app nasce vazio: os dados ficam no Supabase (atrás do login)
+  /* O app nasce vazio: os dados ficam no backend (atrás do login)
    * e no localStorage de cada dispositivo — nunca neste arquivo público. */
   return { activities: [], grants: [], costs: [], manuscripts: [], trips: [], collections: [], samples: [] };
 }
@@ -574,70 +584,163 @@ function save() {
   if (API_ON && getSession()) scheduleSync();
 }
 
-/* ================= sincronização (Supabase) ================= */
+/* ================= sincronização =================
+ * Dois backends com a mesma interface: signIn / refresh / load / saveState.
+ * A sessão guardada é sempre { access_token, refresh_token, uid, exp }. */
+const BACKENDS = {
+  supabase: {
+    async signIn(email, password) {
+      const r = await fetch(`${SUPABASE.url}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE.key },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!r.ok) return { ok: false, status: r.status };
+      const j = await r.json();
+      return { ok: true, session: {
+        access_token: j.access_token, refresh_token: j.refresh_token,
+        uid: j.user?.id, exp: Date.now() + (+j.expires_in || 3600) * 1000,
+      } };
+    },
+    async refresh(s) {
+      const r = await fetch(`${SUPABASE.url}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE.key },
+        body: JSON.stringify({ refresh_token: s.refresh_token }),
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return { access_token: j.access_token, refresh_token: j.refresh_token,
+        uid: j.user?.id || s.uid, exp: Date.now() + (+j.expires_in || 3600) * 1000 };
+    },
+    async load(s) {
+      const r = await fetch(`${SUPABASE.url}/rest/v1/app_state?select=data&user_id=eq.${s.uid}`, {
+        headers: { apikey: SUPABASE.key, Authorization: "Bearer " + s.access_token },
+      });
+      if (!r.ok) return { ok: false, status: r.status };
+      const rows = await r.json();
+      return { ok: true, data: Array.isArray(rows) ? rows[0]?.data ?? null : null };
+    },
+    async saveState(s, data) {
+      const r = await fetch(`${SUPABASE.url}/rest/v1/app_state`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE.key, Authorization: "Bearer " + s.access_token,
+          "Content-Type": "application/json", Prefer: "resolution=merge-duplicates",
+        },
+        body: JSON.stringify([{ user_id: s.uid, data, updated_at: new Date().toISOString() }]),
+      });
+      return { ok: r.ok, status: r.status };
+    },
+  },
+
+  firebase: {
+    doc(uid) {
+      return `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}`
+        + `/databases/(default)/documents/app_state/${uid}`;
+    },
+    async signIn(email, password) {
+      const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE.apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, returnSecureToken: true }),
+      });
+      if (!r.ok) return { ok: false, status: r.status };
+      const j = await r.json();
+      return { ok: true, session: {
+        access_token: j.idToken, refresh_token: j.refreshToken,
+        uid: j.localId, exp: Date.now() + (+j.expiresIn || 3600) * 1000,
+      } };
+    },
+    async refresh(s) {
+      const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE.apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: s.refresh_token }),
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return { access_token: j.id_token, refresh_token: j.refresh_token,
+        uid: j.user_id || s.uid, exp: Date.now() + (+j.expires_in || 3600) * 1000 };
+    },
+    async load(s) {
+      const r = await fetch(this.doc(s.uid), { headers: { Authorization: "Bearer " + s.access_token } });
+      if (r.status === 404) return { ok: true, data: null };  // ainda não gravou nada
+      if (!r.ok) return { ok: false, status: r.status };
+      const j = await r.json();
+      const raw = j.fields?.data?.stringValue;
+      return { ok: true, data: raw ? JSON.parse(raw) : null };
+    },
+    async saveState(s, data) {
+      // PATCH com updateMask cria o documento se ele ainda não existir
+      const url = this.doc(s.uid) + "?updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt";
+      const r = await fetch(url, {
+        method: "PATCH",
+        headers: { Authorization: "Bearer " + s.access_token, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: {
+          data: { stringValue: JSON.stringify(data) },
+          updatedAt: { integerValue: String(Date.now()) },
+        } }),
+      });
+      return { ok: r.ok, status: r.status };
+    },
+  },
+};
+const api = BACKENDS[BACKEND];
+const DOC_LIMIT = 900_000; // Firestore aceita 1 MiB por documento; paramos antes disso
+
 let syncTimer = null;
 function getSession() {
   try { return JSON.parse(localStorage.getItem(TOKEN_KEY)) || null; } catch { return null; }
 }
-function saveSession(j) {
-  localStorage.setItem(TOKEN_KEY, JSON.stringify({
-    access_token: j.access_token,
-    refresh_token: j.refresh_token,
-    uid: j.user?.id || getSession()?.uid,
-  }));
-}
-function setSync(status) {
+function saveSession(sess) { localStorage.setItem(TOKEN_KEY, JSON.stringify(sess)); }
+function setSync(status, texto) {
   const b = document.querySelector("#sync-badge");
   if (!API_ON) { b.style.display = "none"; return; }
   b.style.display = "";
   b.className = "sync-badge " + (status === "ok" ? "ok" : status === "err" ? "err" : "");
-  b.textContent = status === "ok" ? "☁ salvo" : status === "err" ? "⚠ offline — salvo localmente" : "☁ sincronizando…";
+  b.textContent = texto || (status === "ok" ? "☁ salvo"
+    : status === "err" ? "⚠ offline — salvo localmente" : "☁ sincronizando…");
 }
 function scheduleSync() {
   clearTimeout(syncTimer);
   setSync("pending");
   syncTimer = setTimeout(pushState, 1500);
 }
-function sbAuth(grant, body) {
-  return fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grant}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY },
-    body: JSON.stringify(body),
-  });
-}
-async function sbRefresh() {
-  const s = getSession();
-  if (!s?.refresh_token) return false;
+/* Renova o token quando falta menos de 1 min (ou quando a sessão é antiga e não tem validade). */
+async function ensureFresh(s) {
+  if (s.exp && s.exp - Date.now() > 60000) return s;
+  if (!s.refresh_token) return s;
   try {
-    const r = await sbAuth("refresh_token", { refresh_token: s.refresh_token });
-    if (!r.ok) { localStorage.removeItem(TOKEN_KEY); return false; }
-    saveSession(await r.json());
-    return true;
-  } catch { return false; }
+    const ns = await api.refresh(s);
+    if (!ns) { localStorage.removeItem(TOKEN_KEY); return null; }
+    saveSession(ns);
+    return ns;
+  } catch { return s; } // sem rede: tenta com o token atual
 }
-async function sbFetch(path, opts = {}, retry = true) {
-  const s = getSession();
-  const r = await fetch(SUPABASE_URL + path, {
-    ...opts,
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: "Bearer " + (s?.access_token || ""),
-      "Content-Type": "application/json",
-      ...(opts.headers || {}),
-    },
-  });
-  if (r.status === 401 && retry && await sbRefresh()) return sbFetch(path, opts, false);
-  return r;
+/* Executa uma chamada garantindo token válido, com uma nova tentativa se ele for recusado. */
+async function callApi(fn) {
+  let s = getSession();
+  if (!s) return { ok: false, status: 401 };
+  s = await ensureFresh(s);
+  if (!s) return { ok: false, status: 401 };
+  let res = await fn(s);
+  if (res.status === 401 || res.status === 403) {
+    const ns = await api.refresh(s).catch(() => null);
+    if (ns) { saveSession(ns); res = await fn(ns); }
+  }
+  return res;
 }
 async function pushState() {
-  const s = getSession();
-  if (!s) return;
+  if (!getSession()) return;
+  const tamanho = JSON.stringify(state).length;
+  if (tamanho > DOC_LIMIT) {
+    setSync("err", "⚠ base grande demais — use Exportar");
+    console.warn(`Estado com ${tamanho} bytes excede o limite de ${DOC_LIMIT} para sincronizar.`);
+    return;
+  }
   try {
-    const r = await sbFetch("/rest/v1/app_state", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify([{ user_id: s.uid, data: state, updated_at: new Date().toISOString() }]),
-    });
+    const r = await callApi(s => api.saveState(s, state));
     if (r.ok) setSync("ok");
     else if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); }
     else setSync("err");
@@ -657,10 +760,10 @@ async function boot() {
   if (!API_ON) { startApp(); return; }
   if (!getSession()) { showLogin(); return; }
   try {
-    const r = await sbFetch(`/rest/v1/app_state?select=data&user_id=eq.${getSession().uid}`);
+    const r = await callApi(s => api.load(s));
     if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); return; }
-    const rows = await r.json();
-    const remote = Array.isArray(rows) ? rows[0]?.data : null;
+    if (!r.ok) throw new Error("falha ao carregar (" + r.status + ")");
+    const remote = r.data;
     if (remote && (remote._updatedAt || 0) > (state._updatedAt || 0)) {
       remote.collections ??= []; remote.samples ??= [];
       state = remote;
@@ -740,14 +843,14 @@ $("#login-form").addEventListener("submit", async e => {
   const fd = new FormData(e.target);
   btn.disabled = true; btn.textContent = "Entrando…"; err.style.display = "none";
   try {
-    const r = await sbAuth("password", { email: String(fd.get("email")).trim(), password: fd.get("password") });
+    const r = await api.signIn(String(fd.get("email")).trim(), fd.get("password"));
     if (!r.ok) {
       err.textContent = (r.status === 400 || r.status === 401)
         ? "E-mail ou senha incorretos."
         : "Erro no servidor (" + r.status + "). Tente novamente.";
       err.style.display = "";
     } else {
-      saveSession(await r.json());
+      saveSession(r.session);
       e.target.reset();
       await boot();
     }
