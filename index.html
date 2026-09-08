@@ -822,6 +822,16 @@ const HOST_GROUPS = {
 };
 const COLL_TYPES = ["Fungo + hospedeiro + substrato", "Fungo + hospedeiro", "Apenas fungo", "Cultura viva", "Amostra de DNA/sílica", "Outra"];
 
+/* Fotos no Google Drive: se houver link salvo, usa ele; senão procura pelo código
+ * (as pastas no Drive se chamam como a coleta, então a busca cai no lugar certo —
+ * e ainda mostra as pastas de subamostras, tipo TAJ102A e TAJ102B). */
+const DRIVE_SEARCH = "https://drive.google.com/drive/search?q=";
+const photoUrl = c => {
+  const link = String(c.photos || "").trim().split(/\s+·\s+/)[0];
+  if (link) return link;
+  return c.code ? DRIVE_SEARCH + encodeURIComponent(String(c.code).trim()) : "";
+};
+
 /* ================= navegação ================= */
 $("#tabs").addEventListener("click", e => {
   const btn = e.target.closest("button"); if (!btn) return;
@@ -1234,6 +1244,8 @@ function collFields() {
     { key: "lon", label: "Longitude (graus decimais)", half: true },
     { key: "gps", label: "📍 Preencher coordenadas com o GPS do dispositivo", type: "button" },
     { key: "substrate", label: "Substrato" },
+    { key: "photos", label: "Pasta de fotos (link do Google Drive — opcional)" },
+    { key: "drive", label: "🔍 Abrir as fotos desta coleta no Drive", type: "button" },
     { key: "notes", label: "Notas", type: "textarea" },
   ];
 }
@@ -1256,6 +1268,14 @@ function sampleFields() {
 }
 
 const gpsAction = act => {
+  if (act === "drive") { // abre o link salvo, ou procura pelo código no Drive
+    const codigo = $("#modal-fields [name=code]")?.value?.trim() || "";
+    const link = $("#modal-fields [name=photos]")?.value?.trim() || "";
+    const url = photoUrl({ code: codigo, photos: link });
+    if (!url) { alert("Preencha o código da coleta (ou o link da pasta) primeiro."); return; }
+    window.open(url, "_blank", "noopener");
+    return;
+  }
   if (act !== "gps") return;
   if (!navigator.geolocation) { alert("Geolocalização não disponível neste navegador."); return; }
   navigator.geolocation.getCurrentPosition(
@@ -1284,7 +1304,14 @@ const COLL_COLS = {
     { key: "hostGroup", label: "Grupo", type: "txt", cell: c => esc(c.hostGroup || "—") },
     { key: "locality", label: "Localidade", type: "txt", cell: c => `${esc(c.locality || "—")}${(c.lat || c.lon) ? `<div class="coords">${esc(c.lat)}, ${esc(c.lon)}</div>` : ""}` },
     { key: "voucher", label: "Voucher / barcode", type: "nat", cell: c => `${esc(c.voucher || "—")}${c.barcode ? `<div class="coords">${esc(c.barcode)}</div>` : ""}` },
-    { key: "photographed", label: "Foto", type: "txt", cell: c => (c.photographed === "sim" ? "📷" : "—"), sortVal: c => (c.photographed === "sim" ? "1" : "") },
+    { key: "photographed", label: "Foto", type: "txt", sortVal: c => (c.photographed === "sim" ? "1" : ""),
+      cell: c => {
+        const url = photoUrl(c), marcado = c.photographed === "sim";
+        if (!url) return marcado ? "📷" : "—";
+        const dica = c.photos ? "Abrir a pasta de fotos no Drive" : `Procurar “${c.code}” no Google Drive`;
+        return `<a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(dica)}"
+          style="text-decoration:none;">${marcado ? "📷" : "🔍"}</a>`;
+      } },
   ],
   ext: [
     { key: "collection", label: "Coleção", type: "nat", cell: s => `<span style="font-weight:650; white-space:nowrap;">${esc(s.collection || "—")}</span>` },
@@ -1360,6 +1387,7 @@ $("#coll-table").addEventListener("click", e => {
     renderColl();
     return;
   }
+  if (e.target.closest("a")) return; // link de fotos: deixa abrir sem entrar na edição
   const row = e.target.closest("tr.rowlink"); if (!row) return;
   if (row.dataset.kind === "mine") {
     const c = state.collections.find(x => x.id === row.dataset.id);
@@ -1403,8 +1431,8 @@ $("#btn-csv-coll").addEventListener("click", () => {
   const today = new Date().toISOString().slice(0, 10);
   if (collSub === "mine") {
     csvDownload(`coletas-${today}.csv`,
-      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Substrato", "Notas"],
-      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.lat, c.lon, c.substrate, c.notes]));
+      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Substrato", "Pasta de fotos", "Notas"],
+      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.lat, c.lon, c.substrate, c.photos, c.notes]));
   } else {
     csvDownload(`amostras-colecoes-${today}.csv`,
       ["Fonte", "Coleção", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Coletor", "Data de coleta", "Determinador", "Data de determinação", "Notas"],
@@ -1605,6 +1633,7 @@ const IMPORT_FIELDS = {
     { key: "lat", label: "Latitude", kind: "coord", hemiAliases: ["ns", "hemisferio", "hemisphere"], aliases: ["decimallatitude", "ddlat", "latitude", "lat", "dmslat", "y"] },
     { key: "lon", label: "Longitude", kind: "coord", hemiAliases: ["ew", "we"], aliases: ["decimallongitude", "ddlong", "longitude", "lon", "long", "lng", "dmslong", "x"] },
     { key: "substrate", label: "Substrato", aliases: ["substrato", "substrate", "plant", "planta", "subunit int bryo", "subunit ext bryo", "bryo"] },
+    { key: "photos", label: "Pasta de fotos", aliases: ["pasta de fotos", "fotos", "photos", "link", "url", "drive", "pasta", "folder"] },
     { key: "notes", label: "Notas", aliases: ["notas", "nota", "notes", "obs", "observacoes", "remarks", "comentarios", "occurrenceremarks"] },
   ],
   ext: [
@@ -1626,6 +1655,7 @@ const IMPORT_FIELDS = {
 
 /* --- estado da importação --- */
 let impRows = null, impHeaders = [], impSheets = null, impMap = {}, impHemi = {};
+let impMode = "add"; // "add" cria registros novos; "update" completa os que já existem
 
 function autoMap(headers, fields, rows = []) {
   const norm = headers.map(normTxt);
@@ -1762,11 +1792,20 @@ function impRenderMapping() {
   const codeMapped = impMap.code !== undefined;
   const numericCodes = codeMapped && impRows.slice(0, 20).some(r => /^\d+$/.test(clean(r[impMap.code])));
   const guess = codeMapped ? (impHeaders[impMap.code] || "").trim().toUpperCase().replace(/[^A-Z]/g, "") : "";
+  const atualizando = collSub === "mine" && impMode === "update";
   $("#imp-options").innerHTML = `
-    ${collSub === "mine" ? `<label><input type="checkbox" id="imp-skipdup" checked> Ignorar códigos repetidos (já existentes no app ou duplicados dentro do arquivo)</label>` : ""}
+    ${collSub === "mine" ? `<label>Modo:
+      <select id="imp-mode">
+        <option value="add" ${impMode === "add" ? "selected" : ""}>Adicionar registros novos</option>
+        <option value="update" ${atualizando ? "selected" : ""}>Completar registros existentes (casar pelo código)</option>
+      </select></label>` : ""}
+    ${atualizando ? `<label style="color:var(--muted)">Só preenche campos vindos preenchidos na planilha — nada é apagado.</label>` : ""}
+    ${collSub === "mine" && !atualizando ? `<label><input type="checkbox" id="imp-skipdup" checked> Ignorar códigos repetidos (já existentes no app ou duplicados dentro do arquivo)</label>` : ""}
     ${collSub === "mine" && numericCodes ? `<label>Prefixo para códigos numéricos:
       <input type="text" id="imp-prefix" value="${esc(guess.length <= 5 ? guess : "")}" placeholder="ex: TAJ"> <span style="color:var(--muted)">(vira ${esc(guess || "TAJ")}30)</span></label>` : ""}
-    <label><input type="checkbox" id="imp-extras" checked> Guardar colunas não mapeadas nas Notas (não perde informação)</label>`;
+    ${atualizando ? "" : `<label><input type="checkbox" id="imp-extras" checked> Guardar colunas não mapeadas nas Notas (não perde informação)</label>`}`;
+  const selMode = document.getElementById("imp-mode");
+  if (selMode) selMode.addEventListener("change", ev => { impMode = ev.target.value; impRenderMapping(); });
   $("#imp-map").querySelectorAll("select").forEach(s => s.addEventListener("change", ev => {
     const v = +ev.target.value;
     if (v < 0) delete impMap[ev.target.dataset.field]; else impMap[ev.target.dataset.field] = v;
@@ -1805,11 +1844,40 @@ function impRenderPreview() {
       const v = o[f.key];
       return `<td class="${v ? "" : "blank"}" title="${esc(v)}">${v ? esc(v) : "—"}</td>`;
     }).join("")}</tr>`).join("");
-  $("#imp-run").textContent = `Importar ${impRows.length} ${impRows.length === 1 ? "registro" : "registros"}`;
+  $("#imp-run").textContent = (collSub === "mine" && impMode === "update" ? "Atualizar com " : "Importar ")
+    + `${impRows.length} ${impRows.length === 1 ? "linha" : "linhas"}`;
 }
 
 $("#imp-run").addEventListener("click", () => {
   if (!impRows?.length) return;
+
+  if (collSub === "mine" && impMode === "update") { // completa registros que já existem
+    const porCodigo = new Map(state.collections.map(c => [normTxt(c.code), c]));
+    let atualizados = 0, semCodigo = 0, naoAchados = 0, campos = 0;
+    impRows.forEach(row => {
+      const obj = impBuildRow(row);
+      if (!obj.code) { semCodigo++; return; }
+      const alvo = porCodigo.get(normTxt(obj.code));
+      if (!alvo) { naoAchados++; return; }
+      let mudou = false;
+      Object.entries(obj).forEach(([k, v]) => {
+        if (k === "code" || !v) return;              // nunca sobrescreve com vazio
+        if (k === "notes" && alvo.notes && alvo.notes !== v) {
+          if (!alvo.notes.includes(v)) { alvo.notes += "\n" + v; mudou = true; campos++; }
+          return;
+        }
+        if (alvo[k] !== v) { alvo[k] = v; mudou = true; campos++; }
+      });
+      if (mudou) atualizados++;
+    });
+    save(); renderColl(); renderDash();
+    impModal.close();
+    alert(`✅ ${atualizados} ${atualizados === 1 ? "coleta atualizada" : "coletas atualizadas"} (${campos} ${campos === 1 ? "campo preenchido" : "campos preenchidos"}).`
+      + (naoAchados ? `\n${naoAchados} código(s) da planilha não existem no app.` : "")
+      + (semCodigo ? `\n${semCodigo} linha(s) sem código foram ignoradas.` : ""));
+    return;
+  }
+
   const skipDup = document.querySelector("#imp-skipdup")?.checked;
   const existing = new Set(state.collections.map(c => normTxt(c.code)).filter(Boolean));
   let added = 0, skipped = 0, noDate = 0;
