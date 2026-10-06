@@ -73,6 +73,7 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; } /* sem isto, display:flex/grid de uma classe venceria o atributo */
   body {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--page);
@@ -355,6 +356,20 @@
   }
   .mat-saida p { margin: 0 0 12px; }
 
+  /* ---- qualidade dos dados ---- */
+  .coll-filtro { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); margin: -4px 0 12px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; }
+  .coll-filtro b { color: var(--ink-1); }
+  .coll-filtro button { margin-left: auto; border: 0; background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .qual-lista { display: flex; flex-direction: column; gap: 6px; }
+  .qual-item { display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 12px; text-align: left;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--ink-1); border-radius: 9px; padding: 10px 12px; font: inherit; font-size: 13.5px; cursor: pointer; }
+  .qual-item:hover { background: var(--page); border-color: var(--accent-mid); }
+  .qual-nivel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 5px; padding: 2px 6px; text-align: center; }
+  .qual-nivel.erro { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--ink-1); }
+  .qual-nivel.aviso { background: color-mix(in srgb, var(--warning) 25%, transparent); color: var(--ink-1); }
+  .qual-n { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
   /* ---- importação ---- */
   dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
   dialog[open].wide { display: flex; flex-direction: column; }
@@ -529,7 +544,9 @@
         <button data-view="planilha" title="Editar direto nas células, como numa planilha">▦ Planilha</button>
       </div>
       <input type="search" id="coll-search" placeholder="Buscar por código, ID, hospedeiro, localidade…">
+      <button type="button" class="btn ghost sm" id="btn-qual">Qualidade</button>
     </div>
+    <div class="coll-filtro" id="coll-filtro" hidden></div>
     <div class="card">
       <div class="tblwrap"><table class="tbl" id="coll-table"></table></div>
       <div id="coll-grid" style="display:none;"></div>
@@ -664,6 +681,16 @@
     <button type="button" class="btn ghost" id="mat-copiar-txt">Copiar texto simples</button>
     <button type="button" class="btn primary" id="mat-copiar">Copiar com itálico</button>
   </div>
+</dialog>
+
+<dialog id="qual-modal" class="wide">
+  <div class="modal-head">Qualidade dos dados — coletas</div>
+  <div class="modal-body">
+    <div class="imp-note">Clique num item para abrir a planilha filtrada nesses registros e corrigir em lote.
+      <b>Erro</b> = dado provavelmente errado; <b>aviso</b> = dado incompleto.</div>
+    <div class="qual-lista" id="qual-corpo"></div>
+  </div>
+  <div class="modal-foot"><button type="button" class="btn ghost" id="qual-fechar">Fechar</button></div>
 </dialog>
 
 <dialog id="modal">
@@ -1937,7 +1964,12 @@ function renderColl() {
   const cols = COLL_COLS[collSub], sort = collSort[collSub];
   const base = mine ? state.collections : state.samples;
   const colsOrdem = collView === "planilha" ? GRID_COLS[collSub] : cols;
-  const rows = sortColl(base.filter(r => collMatches(r, q) || (collView === "planilha" && gridNovos.has(r.id))), colsOrdem, sort);
+  const fq = filtroQualidade();
+  const rows = sortColl(base.filter(r => (collMatches(r, q) && (!fq || fq(r))) || (collView === "planilha" && gridNovos.has(r.id))), colsOrdem, sort);
+  const chip = $("#coll-filtro");
+  chip.hidden = !fq;
+  if (fq) chip.innerHTML = `Mostrando só: <b>${esc(collFiltro.rotulo)}</b> <button type="button" data-limpar-filtro aria-label="Remover filtro">✕ remover filtro</button>`;
+  atualizarBotaoQualidade();
   document.querySelectorAll("#coll-view button").forEach(x => x.classList.toggle("active", x.dataset.view === collView));
 
   if (collView === "planilha") {
@@ -2666,6 +2698,74 @@ function exportarDarwinCore() {
   toast(`Darwin Core: ${regs.length} ${regs.length === 1 ? "registro exportado" : "registros exportados"}.`);
 }
 $("#btn-dwc").addEventListener("click", exportarDarwinCore);
+
+/* ================= qualidade dos dados =================
+ * Cada verificação lista os registros afetados; um clique abre a planilha filtrada
+ * neles, para corrigir em lote. "erro" = dado provavelmente errado; "aviso" = incompleto. */
+const numOk = v => v !== "" && v != null && !isNaN(parseFloat(v));
+const VERIFICACOES = [
+  { id: "dup", nivel: "erro", rotulo: "Código de coleta repetido", fn: (c, d) => d.has(normTxt(c.code)) },
+  { id: "semcod", nivel: "erro", rotulo: "Sem código de coleta", fn: c => !String(c.code || "").trim() },
+  { id: "coordfora", nivel: "erro", rotulo: "Coordenada inválida ou fora da Amazônia",
+    fn: c => (numOk(c.lat) || numOk(c.lon) || String(c.lat || c.lon || "").trim())
+      && (!numOk(c.lat) || !numOk(c.lon) || +c.lat < -19 || +c.lat > 6 || +c.lon < -80 || +c.lon > -43) },
+  { id: "datafut", nivel: "erro", rotulo: "Data no futuro", fn: c => /^\d{4}-\d{2}-\d{2}$/.test(c.date || "") && c.date > hojeLocal() },
+  { id: "datainv", nivel: "erro", rotulo: "Data em formato não reconhecido", fn: c => String(c.date || "").trim() && !/^\d{4}-\d{2}-\d{2}$/.test(c.date) },
+  { id: "grupofora", nivel: "aviso", rotulo: "Grupo do hospedeiro fora da lista (veio de planilha)", fn: c => c.hostGroup && !HOST_FLAT.includes(c.hostGroup) },
+  { id: "semgrupo", nivel: "aviso", rotulo: "Hospedeiro sem grupo", fn: c => String(c.host || "").trim() && !String(c.hostGroup || "").trim() },
+  { id: "idsemhost", nivel: "aviso", rotulo: "Com identificação, mas sem hospedeiro", fn: c => String(c.currentId || "").trim() && !String(c.host || "").trim() },
+  { id: "semdata", nivel: "aviso", rotulo: "Sem data de coleta", fn: c => !String(c.date || "").trim() },
+  { id: "semprec", nivel: "aviso", rotulo: "Coordenada sem precisão do GPS", fn: c => numOk(c.lat) && numOk(c.lon) && !String(c.gpsAcc || "").trim() },
+  { id: "fotosemlink", nivel: "aviso", rotulo: "Fotografada, sem link direto da pasta no Drive", fn: c => c.photographed === "sim" && !String(c.photos || "").trim() },
+];
+let collFiltro = null; // { id, rotulo } da verificação aplicada à lista/planilha
+function filtroQualidade() {
+  if (!collFiltro || collSub !== "mine") return null;
+  const v = VERIFICACOES.find(x => x.id === collFiltro.id);
+  if (!v) return null;
+  const d = codigosDuplicados();
+  return c => v.fn(c, d);
+}
+function levantarProblemas() {
+  const d = codigosDuplicados();
+  return VERIFICACOES.map(v => ({ ...v, n: state.collections.filter(c => v.fn(c, d)).length })).filter(v => v.n);
+}
+function atualizarBotaoQualidade() {
+  const b = $("#btn-qual");
+  if (!b) return;
+  const p = levantarProblemas();
+  const erros = p.filter(x => x.nivel === "erro").reduce((s, x) => s + x.n, 0);
+  b.textContent = erros ? `⚠ Qualidade · ${erros}` : "Qualidade";
+  b.title = erros ? `${erros} ${erros === 1 ? "problema provável" : "problemas prováveis"} nos dados` : "Verificar a qualidade dos dados";
+}
+function abrirQualidade() {
+  const p = levantarProblemas();
+  $("#qual-corpo").innerHTML = p.length
+    ? p.map(v => `<button type="button" class="qual-item" data-qual="${v.id}">
+        <span class="qual-nivel ${v.nivel}">${v.nivel === "erro" ? "erro" : "aviso"}</span>
+        <span class="qual-rot">${esc(v.rotulo)}</span>
+        <span class="qual-n">${v.n} ${v.n === 1 ? "registro" : "registros"} →</span></button>`).join("")
+    : `<div class="empty">Nenhum problema encontrado nas coletas. 🎉</div>`;
+  $("#qual-modal").showModal();
+}
+$("#btn-qual").addEventListener("click", abrirQualidade);
+$("#qual-fechar").addEventListener("click", () => $("#qual-modal").close());
+$("#qual-corpo").addEventListener("click", e => {
+  const id = e.target.closest("[data-qual]")?.dataset.qual;
+  if (!id) return;
+  const v = VERIFICACOES.find(x => x.id === id);
+  collFiltro = { id, rotulo: v.rotulo };
+  collSub = "mine"; collView = "planilha"; gridSel.clear();
+  collQuery = ""; $("#coll-search").value = "";
+  try { localStorage.setItem("phd-coll-view", "planilha"); } catch {}
+  $("#qual-modal").close();
+  document.querySelector('#tabs [data-view="coll"]').click();
+  renderColl();
+});
+$("#coll-filtro").addEventListener("click", e => {
+  if (e.target.closest("[data-limpar-filtro]")) { collFiltro = null; renderColl(); }
+});
+
 $("#mat-copiar").addEventListener("click", () => copiarMaterial(true));
 $("#mat-copiar-txt").addEventListener("click", () => copiarMaterial(false));
 $("#mat-fechar").addEventListener("click", () => $("#mat-modal").close());
