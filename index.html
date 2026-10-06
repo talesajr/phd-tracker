@@ -370,6 +370,23 @@
   .qual-nivel.aviso { background: color-mix(in srgb, var(--warning) 25%, transparent); color: var(--ink-1); }
   .qual-n { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+  /* ---- mapa ---- */
+  .mapa-controles { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 12px; align-items: center; }
+  .mapa-card { padding: 0; overflow: hidden; }
+  #mapa-area { height: min(68vh, 640px); min-height: 360px; background: #0f2236; }
+  #mapa-area.fundo-claro { background: var(--page); }
+  .mapa-legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 14px; font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--border); }
+  .mapa-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+  .mapa-legenda i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .mapa-resumo { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+  @media (max-width: 800px) { .mapa-resumo { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .mapa-num { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .mapa-num b { display: block; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  .mapa-num span { font-size: 12px; color: var(--ink-2); }
+  .leaflet-container { font: inherit; }
+  .leaflet-popup-content .pop { font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .leaflet-popup-content .pop .btn { margin-right: 4px; }
+
   /* ---- importação ---- */
   dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
   dialog[open].wide { display: flex; flex-direction: column; }
@@ -465,6 +482,7 @@
     <button data-view="fund">Financiamentos</button>
     <button data-view="manu">Manuscritos</button>
     <button data-view="trip">Campo &amp; Viagens</button>
+    <button data-view="mapa">Mapa</button>
   </nav>
 </header>
 
@@ -582,6 +600,35 @@
   </section>
 
   <!-- ============ CAMPO & VIAGENS ============ -->
+  <section class="view" id="view-mapa">
+    <div class="view-head">
+      <h2>Mapa de coletas</h2>
+      <span class="hint" id="mapa-status"></span>
+      <div class="grow"></div>
+      <button class="btn ghost sm" id="btn-minha-posicao">📍 Minha posição</button>
+      <button class="btn primary sm" id="btn-nova-site">+ Localidade</button>
+    </div>
+    <div class="mapa-controles">
+      <label class="checkline"><input type="checkbox" id="mapa-filtro-hemi"> Mostrar todos os espécimes (padrão: só Hemiptera)</label>
+      <label class="checkline">Célula da grade:
+        <select id="mapa-celula" class="stage-select"><option value="0.25">0,25° (~28 km)</option><option value="0.5">0,5° (~55 km)</option><option value="1">1° (~110 km)</option></select></label>
+      <label class="checkline"><input type="checkbox" id="mapa-grade-vazia"> Mostrar células vazias</label>
+    </div>
+    <div class="card mapa-card">
+      <div id="mapa-area"></div>
+      <div class="mapa-legenda">
+        <span><i style="background:#0ca30c"></i>com coleta</span>
+        <span><i style="background:#3987e5"></i>planejada</span>
+        <span><i style="background:#898781"></i>localidade sem plano</span>
+        <span><i style="background:#e87ba4; border-radius:50%"></i>espécime (coordenada própria)</span>
+        <span><i style="background:transparent; border:2px solid #fab219"></i>limite da Amazônia (RAISG)</span>
+      </div>
+    </div>
+    <div class="mapa-resumo" id="mapa-resumo"></div>
+    <h3 class="blk">Localidades de campo</h3>
+    <div class="card"><div class="tblwrap"><table class="tbl" id="sites-tabela"></table></div></div>
+  </section>
+
   <section class="view" id="view-trip">
     <div class="view-head">
       <h2>Campo e viagens</h2>
@@ -749,7 +796,7 @@ function seed() {
  * coisas diferentes (celular offline em campo + notebook) juntam o trabalho em vez
  * de um sobrescrever o outro. Ninguém precisa marcar `_u` à mão: o save() compara
  * cada item com a última versão salva e carimba só o que mudou. */
-const LISTS = ["activities", "grants", "costs", "manuscripts", "trips", "collections", "samples", "hostMap"];
+const LISTS = ["activities", "grants", "costs", "manuscripts", "trips", "collections", "samples", "hostMap", "sites"];
 const TOMBSTONE_TTL = 365 * 86400000; // marcas de exclusão com mais de 1 ano são descartadas
 
 function normalizeState(s) {
@@ -1192,6 +1239,7 @@ $("#tabs").addEventListener("click", e => {
   const btn = e.target.closest("button"); if (!btn) return;
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b === btn));
   document.querySelectorAll("section.view").forEach(v => v.classList.toggle("active", v.id === "view-" + btn.dataset.view));
+  if (btn.dataset.view === "mapa") iniciarMapa();
 });
 
 /* ================= tema ================= */
@@ -1627,6 +1675,8 @@ function collFields({ campo = false } = {}) {
     { key: "host", label: "Hospedeiro", half: true },
     { key: "hostGroup", label: "Grupo do hospedeiro", type: "select", groups: HOST_GROUPS, half: true },
     { key: "locality", label: "Localidade" },
+    { key: "site", label: "Localidade de campo (mapa)", type: "select",
+      options: [["", "Automática — pela coordenada ou pelo texto"], ...[...state.sites].sort((a, b) => a.name.localeCompare(b.name)).map(x => [x.name, x.name])] },
     { key: "lat", label: "Latitude (graus decimais)", half: true, inputmode: "decimal" },
     { key: "lon", label: "Longitude (graus decimais)", half: true, inputmode: "decimal" },
     { key: "gps", label: campo ? "📍 Recapturar GPS" : "📍 Capturar com o GPS do aparelho", type: "button", status: true },
@@ -1695,7 +1745,7 @@ function capturarGPS() {
     if (!f("lat")) { pararGPS(); return; } // janela fechada
     f("lat").value = pos.coords.latitude.toFixed(6);
     f("lon").value = pos.coords.longitude.toFixed(6);
-    f("gpsAcc").value = String(Math.round(acc));
+    if (f("gpsAcc")) f("gpsAcc").value = String(Math.round(acc));
     msg(acc <= 10 ? `±${Math.round(acc)} m ✓` : `±${Math.round(acc)} m — refinando…`);
     if (acc <= 10) pararGPS();
   }, err => {
@@ -1766,6 +1816,7 @@ const GRID_COLS = {
     { key: "host", label: "Hospedeiro", w: 165, type: "txt" },
     { key: "hostGroup", label: "Grupo do hospedeiro", w: 175, type: "txt", norm: "hostgroup", list: "dl-grupo" },
     { key: "locality", label: "Localidade", w: 230, type: "txt" },
+    { key: "site", label: "Localidade de campo", w: 165, type: "txt", norm: "site", list: "dl-sites" },
     { key: "lat", label: "Latitude", w: 100, type: "txt", norm: "coord" },
     { key: "lon", label: "Longitude", w: 100, type: "txt", norm: "coord" },
     { key: "gpsAcc", label: "Precisão GPS (m)", w: 92, type: "nat", norm: "num" },
@@ -1809,6 +1860,7 @@ function normCell(col, valor) {
     case "colltype": return matchFromList(v, COLL_TYPES);
     case "bool": return toYesNo(v);
     case "lista": return matchFromList(v, col.opcoes);
+    case "site": return matchFromList(v, state.sites.map(x => x.name));
     case "num": { const n = parseFloat(v.replace(",", ".").replace(/[^\d.\-]/g, "")); return isNaN(n) ? v : String(Math.round(n * 10) / 10); }
     default: return v;
   }
@@ -1911,7 +1963,7 @@ function renderGrid(rows, cols, sort, cap) {
   const podeDesfazer = undoStack.length > 0;
   $("#coll-grid").innerHTML =
     dl("dl-grupo", HOST_FLAT) + dl("dl-tipo", COLL_TYPES) + dl("dl-simnao", ["sim", "nao"])
-    + dl("dl-cultura", LAB_CULTURA) + dl("dl-dna", LAB_DNA) + dl("dl-locus", LAB_LOCUS) + dl("dl-genoma", LAB_GENOMA)
+    + dl("dl-sites", state.sites.map(x => x.name)) + dl("dl-cultura", LAB_CULTURA) + dl("dl-dna", LAB_DNA) + dl("dl-locus", LAB_LOCUS) + dl("dl-genoma", LAB_GENOMA)
     + (collSub === "mine" ? `<div class="grid-bar"><span class="gsel-n">Colunas:</span>
         <div class="seg seg-sm" id="grid-grupos">
           ${[["coleta", "Coleta"], ["lab", "Laboratório"], ["todas", "Todas"]].map(([v, r]) =>
@@ -2494,8 +2546,8 @@ $("#btn-csv-coll").addEventListener("click", () => {
   const today = hojeLocal();
   if (collSub === "mine") {
     csvDownload(`coletas-${today}.csv`,
-      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Precisão GPS (m)", "Substrato", "Pasta de fotos", "Notas", "Cultura", "DNA", "SSU", "LSU", "TEF1", "RPB1", "RPB2", "Genoma", "GenBank"],
-      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.lat, c.lon, c.gpsAcc, c.substrate, c.photos, c.notes, c.culture, c.dna, c.ssu, c.lsu, c.tef1, c.rpb1, c.rpb2, c.genome, c.genbank]));
+      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Localidade de campo", "Latitude", "Longitude", "Precisão GPS (m)", "Substrato", "Pasta de fotos", "Notas", "Cultura", "DNA", "SSU", "LSU", "TEF1", "RPB1", "RPB2", "Genoma", "GenBank"],
+      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.site, c.lat, c.lon, c.gpsAcc, c.substrate, c.photos, c.notes, c.culture, c.dna, c.ssu, c.lsu, c.tef1, c.rpb1, c.rpb2, c.genome, c.genbank]));
   } else {
     csvDownload(`amostras-colecoes-${today}.csv`,
       ["Fonte", "Coleção", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Coletor", "Data de coleta", "Determinador", "Data de determinação", "Notas"],
@@ -2721,6 +2773,7 @@ const VERIFICACOES = [
 let collFiltro = null; // { id, rotulo } da verificação aplicada à lista/planilha
 function filtroQualidade() {
   if (!collFiltro || collSub !== "mine") return null;
+  if (collFiltro.fn) return collFiltro.fn;
   const v = VERIFICACOES.find(x => x.id === collFiltro.id);
   if (!v) return null;
   const d = codigosDuplicados();
@@ -2762,6 +2815,375 @@ $("#qual-corpo").addEventListener("click", e => {
   document.querySelector('#tabs [data-view="coll"]').click();
   renderColl();
 });
+/* ================= mapa e localidades de campo =================
+ * Localidades (Ducke, ZF-2…) com coordenada e raio; as coletas se ligam a elas por
+ * escolha manual, pela coordenada (dentro do raio) ou pelo texto da localidade.
+ * O mapa mostra o limite da Amazônia (RAISG), rios, localidades, coletas e uma grade
+ * de cobertura. Por padrão só espécimes em Hemiptera (foco do projeto). */
+const SITE_RAIO_PADRAO = 5; // km
+const ehHemiptera = c => String(c.hostGroup || "").startsWith("Hemiptera");
+let mapaSoHemiptera = (() => { try { return localStorage.getItem("phd-mapa-hemi") !== "todos"; } catch { return true; } })();
+let mapaCelula = (() => { try { return +localStorage.getItem("phd-mapa-celula") || 0.5; } catch { return 0.5; } })();
+let mapaGradeVazia = false;
+
+function distKm(a1, o1, a2, o2) {
+  const r = Math.PI / 180, dA = (a2 - a1) * r, dO = (o2 - o1) * r;
+  const h = Math.sin(dA / 2) ** 2 + Math.cos(a1 * r) * Math.cos(a2 * r) * Math.sin(dO / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+const siteTermos = s => [s.name, ...String(s.aliases || "").split(",")].map(normTxt).filter(t => t.length >= 2);
+/* A que localidade esta coleta pertence? Manual vence coordenada, que vence texto. */
+function siteDe(c) {
+  if (c.site) {
+    const s = state.sites.find(x => normTxt(x.name) === normTxt(c.site));
+    if (s) return { s, modo: "manual" };
+  }
+  if (numOk(c.lat) && numOk(c.lon)) {
+    let melhor = null;
+    state.sites.forEach(s => {
+      if (!numOk(s.lat) || !numOk(s.lon)) return;
+      const d = distKm(+c.lat, +c.lon, +s.lat, +s.lon);
+      if (d <= (+s.radius || SITE_RAIO_PADRAO) && (!melhor || d < melhor.d)) melhor = { s, d };
+    });
+    return melhor ? { s: melhor.s, modo: "coordenada" } : null;
+  }
+  const loc = " " + normTxt(c.locality) + " ";
+  if (loc.trim()) for (const s of state.sites) if (siteTermos(s).some(t => loc.includes(" " + t + " "))) return { s, modo: "texto" };
+  return null;
+}
+/* Ponto de cada coleta no mapa: a própria coordenada, ou o centro da localidade. */
+function pontoDaColeta(c) {
+  if (numOk(c.lat) && numOk(c.lon)) return { lat: +c.lat, lon: +c.lon, proprio: true };
+  const v = siteDe(c);
+  return v && numOk(v.s.lat) && numOk(v.s.lon) ? { lat: +v.s.lat, lon: +v.s.lon, proprio: false } : null;
+}
+const coletasDoMapa = () => state.collections.filter(c => !mapaSoHemiptera || ehHemiptera(c));
+
+/* ---- dados geográficos (cache do service worker: funcionam offline) ---- */
+let geoAmazonia = null, leafletPronto = null;
+function carregarLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (leafletPronto) return leafletPronto;
+  leafletPronto = new Promise((ok, falha) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet"; css.href = "./vendor/leaflet/leaflet.min.css";
+    document.head.appendChild(css);
+    const js = document.createElement("script");
+    js.src = "./vendor/leaflet/leaflet.min.js";
+    js.onload = () => ok(); js.onerror = () => falha(new Error("não consegui carregar o mapa"));
+    document.head.appendChild(js);
+  });
+  return leafletPronto;
+}
+async function carregarGeo() {
+  if (!geoAmazonia) geoAmazonia = await (await fetch("./mapa/amazonia.json")).json();
+  return geoAmazonia;
+}
+/* Ponto dentro do limite da Amazônia (ray casting em todos os anéis). */
+function dentroDaAmazonia(lon, lat) {
+  let dentro = false;
+  geoAmazonia.limite.features.forEach(f => {
+    const polis = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+    polis.forEach(anel => anel.forEach(r => {
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i], [xj, yj] = r[j];
+        if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) dentro = !dentro;
+      }
+    }));
+  });
+  return dentro;
+}
+let celulasAmazonia = null; // { tamanho, chaves: Set } — calculado uma vez por tamanho de célula
+function celulasDentro(tam) {
+  if (celulasAmazonia?.tamanho === tam) return celulasAmazonia.chaves;
+  const chaves = new Set();
+  for (let lat = -21.5; lat < 11; lat += tam) for (let lon = -80.6; lon < -42.6; lon += tam) {
+    const i = Math.floor(lat / tam), j = Math.floor(lon / tam);
+    if (dentroDaAmazonia((j + 0.5) * tam, (i + 0.5) * tam)) chaves.add(i + "," + j);
+  }
+  celulasAmazonia = { tamanho: tam, chaves };
+  return chaves;
+}
+const chaveCelula = (lat, lon, tam) => Math.floor(lat / tam) + "," + Math.floor(lon / tam);
+
+function calcularCobertura() {
+  const tam = mapaCelula;
+  const amaz = celulasDentro(tam);
+  const coletadas = new Map(), planejadas = new Set();
+  coletasDoMapa().forEach(c => {
+    const p = pontoDaColeta(c);
+    if (!p) return;
+    const k = chaveCelula(p.lat, p.lon, tam);
+    coletadas.set(k, (coletadas.get(k) || 0) + 1);
+  });
+  state.sites.forEach(s => {
+    if (s.plan !== "planejada" || !numOk(s.lat) || !numOk(s.lon)) return;
+    const k = chaveCelula(+s.lat, +s.lon, tam);
+    if (!coletadas.has(k)) planejadas.add(k);
+  });
+  const naAmaz = k => amaz.has(k);
+  return {
+    tam, amaz, coletadas, planejadas,
+    nAmaz: amaz.size,
+    nColetadas: [...coletadas.keys()].filter(naAmaz).length,
+    nPlanejadas: [...planejadas].filter(naAmaz).length,
+  };
+}
+
+/* ---- mapa ---- */
+let mapa = null, camadasDados = null, mapaRenderer = null, marcadorEu = null;
+async function iniciarMapa() {
+  const status = $("#mapa-status");
+  try {
+    if (status) status.textContent = "carregando o mapa…";
+    await carregarLeaflet();
+    await carregarGeo();
+  } catch (e) {
+    if (status) status.textContent = "Não foi possível carregar o mapa: " + e.message;
+    return;
+  }
+  if (status) status.textContent = "";
+  if (!mapa) {
+    mapaRenderer = L.canvas({ padding: 0.3 });
+    mapa = L.map("mapa-area", { renderer: mapaRenderer, zoomSnap: 0.5, minZoom: 3, worldCopyJump: false, attributionControl: true })
+      .fitBounds([[-20.5, -79.5], [10.5, -43.5]]);
+    const satelite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 18, attribution: "Imagens © Esri, Maxar, Earthstar Geographics" });
+    const ruas = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { maxZoom: 18, attribution: "© colaboradores do OpenStreetMap" });
+    const nenhum = L.layerGroup();
+    let fundo = "satelite";
+    try { fundo = localStorage.getItem("phd-mapa-fundo") || "satelite"; } catch {}
+    ({ satelite, ruas, nenhum }[fundo] || satelite).addTo(mapa);
+    const base = { "Satélite": satelite, "Ruas (OpenStreetMap)": ruas, "Sem fundo (offline)": nenhum };
+    L.control.layers(base, null, { position: "topright", collapsed: true }).addTo(mapa);
+    mapa.on("baselayerchange", e => {
+      const k = e.layer === ruas ? "ruas" : e.layer === nenhum ? "nenhum" : "satelite";
+      try { localStorage.setItem("phd-mapa-fundo", k); } catch {}
+      document.querySelector("#mapa-area").classList.toggle("fundo-claro", k !== "satelite");
+    });
+    document.querySelector("#mapa-area").classList.toggle("fundo-claro", fundo !== "satelite");
+    L.control.scale({ imperial: false, position: "bottomleft" }).addTo(mapa);
+    mapa.attributionControl.addAttribution("Limites: RAISG · Rios: Natural Earth");
+
+    // camadas fixas: estados, países, rios, limite RAISG
+    const g = geoAmazonia;
+    L.geoJSON(g.estados, { style: { color: "#c3c2b7", weight: 0.6, dashArray: "3 3", fill: false, opacity: 0.6 }, interactive: false }).addTo(mapa);
+    L.geoJSON(g.paises, { style: { color: "#e1e0d9", weight: 1.2, fill: false, opacity: 0.85 }, interactive: false }).addTo(mapa);
+    L.geoJSON(g.rios, { style: f => ({ color: "#5598e7", weight: f.properties.r <= 4 ? 2.2 : f.properties.r <= 7 ? 1.4 : 0.9, opacity: 0.9 }),
+      onEachFeature: (f, l) => f.properties.n && l.bindTooltip(f.properties.n, { sticky: true }) }).addTo(mapa);
+    L.geoJSON(g.limite, { style: { color: "#fab219", weight: 2.2, fillColor: "#fab219", fillOpacity: 0.06 }, interactive: false }).addTo(mapa);
+    camadasDados = L.layerGroup().addTo(mapa);
+
+    // clique no mapa: oferece criar localidade ali
+    mapa.on("click", e => {
+      const lat = e.latlng.lat.toFixed(5), lon = e.latlng.lng.toFixed(5);
+      L.popup().setLatLng(e.latlng).setContent(`<div class="pop">${lat}, ${lon}<br>
+        <button type="button" class="btn primary sm" data-nova-site="${lat},${lon}">+ Localidade aqui</button></div>`).openOn(mapa);
+    });
+    $("#mapa-area").addEventListener("click", e => {
+      const b = e.target.closest("[data-nova-site]");
+      if (!b) return;
+      const [lat, lon] = b.dataset.novaSite.split(",");
+      mapa.closePopup();
+      editarSite(null, { lat, lon });
+    });
+  }
+  const primeira = !mapa._enquadrado;
+  setTimeout(() => {
+    mapa.invalidateSize();
+    if (primeira) { mapa.fitBounds([[-20.5, -79.5], [10.5, -43.5]], { padding: [10, 10] }); mapa._enquadrado = true; }
+  }, 80);
+  desenharDadosMapa();
+}
+
+function desenharDadosMapa() {
+  if (!mapa || !camadasDados) return;
+  camadasDados.clearLayers();
+  const cob = calcularCobertura();
+  const t = cob.tam;
+  const ret = (k, estilo, dica) => {
+    const [i, j] = k.split(",").map(Number);
+    const r = L.rectangle([[i * t, j * t], [(i + 1) * t, (j + 1) * t]], { ...estilo, weight: 0.6 });
+    if (dica) r.bindTooltip(dica);
+    camadasDados.addLayer(r);
+  };
+  if (mapaGradeVazia) cob.amaz.forEach(k => { if (!cob.coletadas.has(k) && !cob.planejadas.has(k)) ret(k, { color: "#898781", fillOpacity: 0, opacity: 0.35, interactive: false }); });
+  cob.planejadas.forEach(k => ret(k, { color: "#3987e5", fillColor: "#3987e5", fillOpacity: 0.35 }, "Célula planejada (sem coletas ainda)"));
+  cob.coletadas.forEach((n, k) => ret(k, { color: "#0ca30c", fillColor: "#0ca30c", fillOpacity: 0.45 }, `${n} ${n === 1 ? "coleta" : "coletas"} nesta célula`));
+
+  // localidades: círculo do raio + ponto central
+  const contagem = contagemPorSite();
+  state.sites.forEach(s => {
+    if (!numOk(s.lat) || !numOk(s.lon)) return;
+    const n = contagem.get(s.id) || 0;
+    const cor = n ? "#0ca30c" : s.plan === "planejada" ? "#3987e5" : "#898781";
+    camadasDados.addLayer(L.circle([+s.lat, +s.lon], { radius: (+s.radius || SITE_RAIO_PADRAO) * 1000, color: cor, weight: 1.5, fillOpacity: 0.08, interactive: false }));
+    const m = L.circleMarker([+s.lat, +s.lon], { radius: 7, color: "#ffffff", weight: 2, fillColor: cor, fillOpacity: 1 });
+    m.bindTooltip(`${esc(s.name)} · ${n} ${n === 1 ? "coleta" : "coletas"}`, { direction: "top", offset: [0, -6] });
+    m.bindPopup(`<div class="pop"><b>${esc(s.name)}</b><br>${n} ${n === 1 ? "coleta" : "coletas"}${mapaSoHemiptera ? " em Hemiptera" : ""} ·
+      ${s.plan === "planejada" ? "planejada" : n ? "visitada" : "registrada"}<br>
+      <button type="button" class="btn ghost sm" data-editar-site="${s.id}">Editar</button>
+      <button type="button" class="btn ghost sm" data-coletas-site="${s.id}">Ver coletas</button></div>`);
+    camadasDados.addLayer(m);
+  });
+  // coletas com coordenada própria
+  coletasDoMapa().forEach(c => {
+    if (!numOk(c.lat) || !numOk(c.lon)) return;
+    const d = L.circleMarker([+c.lat, +c.lon], { radius: 4, color: "#1a1a19", weight: 1, fillColor: ehHemiptera(c) ? "#e87ba4" : "#fcfcfb", fillOpacity: 1 });
+    d.bindTooltip(`${esc(c.code || "")} · ${esc(c.currentId || "sem ID")}${c.host ? " · " + esc(c.host) : ""}`, { direction: "top" });
+    camadasDados.addLayer(d);
+  });
+  if (marcadorEu) marcadorEu.addTo(camadasDados);
+  renderResumoMapa(cob, contagem);
+}
+
+function contagemPorSite() {
+  const m = new Map();
+  coletasDoMapa().forEach(c => { const v = siteDe(c); if (v) m.set(v.s.id, (m.get(v.s.id) || 0) + 1); });
+  return m;
+}
+
+function renderResumoMapa(cob, contagem) {
+  const total = coletasDoMapa();
+  const noMapa = total.filter(c => pontoDaColeta(c)).length;
+  const pct = cob.nAmaz ? (100 * cob.nColetadas / cob.nAmaz) : 0;
+  const br = (n, d) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+  $("#mapa-resumo").innerHTML = `
+    <div class="mapa-num"><b>${cob.nColetadas}</b><span>${cob.nColetadas === 1 ? "célula com coleta" : "células com coleta"}</span></div>
+    <div class="mapa-num"><b>${br(pct, pct < 1 && pct > 0 ? 2 : 1)}%</b><span>da Amazônia coberta (células de ${br(cob.tam, cob.tam < 1 ? (cob.tam === 0.25 ? 2 : 1) : 0)}°, ${cob.nAmaz.toLocaleString("pt-BR")} no total)</span></div>
+    <div class="mapa-num"><b>${cob.nPlanejadas}</b><span>${cob.nPlanejadas === 1 ? "célula só planejada" : "células só planejadas"}</span></div>
+    <div class="mapa-num"><b>${noMapa}/${total.length}</b><span>${mapaSoHemiptera ? "espécimes em Hemiptera" : "coletas"} localizáveis no mapa</span></div>`;
+  const sites = [...state.sites].sort((a, b) => (contagem.get(b.id) || 0) - (contagem.get(a.id) || 0) || a.name.localeCompare(b.name));
+  const porModo = s => {
+    const r = { manual: 0, coordenada: 0, texto: 0 };
+    coletasDoMapa().forEach(c => { const v = siteDe(c); if (v && v.s.id === s.id) r[v.modo]++; });
+    return r;
+  };
+  $("#sites-tabela").innerHTML = sites.length ? `<tr><th>Localidade</th><th>Situação</th><th class="num">${mapaSoHemiptera ? "Hemiptera" : "Coletas"}</th><th>Ligadas por</th><th class="num">Raio</th><th></th></tr>`
+    + sites.map(s => {
+      const n = contagem.get(s.id) || 0, m = porModo(s);
+      const sit = n ? `<span class="badge b-good"><i></i>visitada</span>` : s.plan === "planejada" ? `<span class="badge b-blue"><i></i>planejada</span>` : `<span class="badge"><i></i>registrada</span>`;
+      const ligadas = [m.coordenada && `${m.coordenada} coordenada`, m.texto && `${m.texto} texto`, m.manual && `${m.manual} manual`].filter(Boolean).join(" · ") || "—";
+      const semCoord = !numOk(s.lat) || !numOk(s.lon);
+      return `<tr>
+        <td><b>${esc(s.name)}</b>${s.aliases ? `<div class="coords">${esc(s.aliases)}</div>` : ""}${semCoord ? `<div class="coords">⚠ sem coordenada</div>` : `<div class="coords">${(+s.lat).toFixed(4)}, ${(+s.lon).toFixed(4)}</div>`}</td>
+        <td>${sit}</td><td class="num">${n}</td><td class="coords" style="white-space:normal">${ligadas}</td>
+        <td class="num">${+s.radius || SITE_RAIO_PADRAO} km</td>
+        <td class="num"><button class="btn ghost sm" data-ir-site="${s.id}" ${semCoord ? "disabled" : ""}>Ver no mapa</button>
+          <button class="btn ghost sm" data-coletas-site="${s.id}">Coletas</button>
+          <button class="btn ghost sm" data-editar-site="${s.id}">Editar</button></td></tr>`;
+    }).join("")
+    : `<tr><td class="empty" style="border:0">Nenhuma localidade ainda — use “+ Localidade”, busque pelo nome ou clique no mapa.</td></tr>`;
+  $("#mapa-filtro-hemi").checked = !mapaSoHemiptera;
+  $("#mapa-celula").value = String(mapaCelula);
+}
+
+/* ---- localidades: criar / editar ---- */
+function siteFields() {
+  return [
+    { key: "name", label: "Nome da localidade (ex.: Reserva Ducke)" },
+    { key: "buscar", label: "🔎 Buscar coordenada pelo nome (OpenStreetMap)", type: "button", status: true },
+    { key: "aliases", label: "Outros nomes, separados por vírgula — usados para ligar coletas pelo texto (ex.: ducke, rfad)" },
+    { key: "lat", label: "Latitude", half: true, inputmode: "decimal" },
+    { key: "lon", label: "Longitude", half: true, inputmode: "decimal" },
+    { key: "gps", label: "📍 Usar o GPS do aparelho", type: "button", status: true },
+    { key: "radius", label: "Raio da localidade (km)", half: true, inputmode: "decimal", default: String(SITE_RAIO_PADRAO) },
+    { key: "plan", label: "Planejamento", type: "select", half: true, options: [["", "Sem plano"], ["planejada", "Planejada (ainda vou coletar)"]] },
+    { key: "notes", label: "Notas (acesso, logística, permissões…)", type: "textarea" },
+  ];
+}
+async function buscarLugar() {
+  const nome = $("#modal-fields [name=name]")?.value.trim();
+  const st = $('#modal-fields [data-status="buscar"]');
+  const msg = t => { if (st) st.textContent = t; };
+  if (!nome) { msg("escreva o nome primeiro"); return; }
+  msg("buscando…");
+  try {
+    const url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=pt-BR"
+      + "&countrycodes=br,co,pe,bo,ec,ve,gy,sr,gf&q=" + encodeURIComponent(nome);
+    const r = await (await fetch(url, { headers: { Accept: "application/json" } })).json();
+    if (!r.length) { msg("não encontrado — tente outro nome, o GPS ou clique no mapa"); return; }
+    $("#modal-fields [name=lat]").value = (+r[0].lat).toFixed(5);
+    $("#modal-fields [name=lon]").value = (+r[0].lon).toFixed(5);
+    msg("✓ " + r[0].display_name.split(",").slice(0, 3).join(","));
+  } catch { msg("sem conexão para buscar — use o GPS ou digite a coordenada"); }
+}
+function editarSite(id, inicial = {}) {
+  const s = id ? state.sites.find(x => x.id === id) : null;
+  const nomeAntigo = s?.name || "";
+  openModal({
+    title: s ? "Editar localidade" : "Nova localidade de campo",
+    fields: siteFields(), values: s || inicial,
+    onAction: act => { if (act === "buscar") buscarLugar(); else if (act === "gps") capturarGPS(); },
+    onSave: d => {
+      const dados = { ...d, name: d.name.trim(), lat: normCell({ norm: "coord" }, d.lat), lon: normCell({ norm: "coord" }, d.lon),
+        radius: String(Math.max(0.1, parseFloat(String(d.radius).replace(",", ".")) || SITE_RAIO_PADRAO)) };
+      if (!dados.name) return;
+      if (s) {
+        Object.assign(s, dados);
+        // coletas ligadas manualmente acompanham a troca de nome
+        if (nomeAntigo && normTxt(nomeAntigo) !== normTxt(dados.name)) {
+          state.collections.forEach(c => { if (normTxt(c.site) === normTxt(nomeAntigo)) c.site = dados.name; });
+        }
+      } else state.sites.push({ id: uid(), ...dados });
+    },
+    onDelete: s ? () => {
+      state.sites = state.sites.filter(x => x.id !== s.id);
+      state.collections.forEach(c => { if (normTxt(c.site) === normTxt(s.name)) c.site = ""; });
+    } : null,
+  });
+}
+function verColetasDoSite(id) {
+  const s = state.sites.find(x => x.id === id);
+  if (!s) return;
+  collFiltro = { id: "site:" + id, rotulo: `Localidade ${s.name}${mapaSoHemiptera ? " (Hemiptera)" : ""}`,
+    fn: c => siteDe(c)?.s.id === id && (!mapaSoHemiptera || ehHemiptera(c)) };
+  collSub = "mine"; gridSel.clear(); collQuery = ""; $("#coll-search").value = "";
+  document.querySelector('#tabs [data-view="coll"]').click();
+  renderColl();
+}
+
+document.addEventListener("click", e => {
+  const ed = e.target.closest("[data-editar-site]");
+  if (ed) { mapa?.closePopup(); editarSite(ed.dataset.editarSite); return; }
+  const vc = e.target.closest("[data-coletas-site]");
+  if (vc) { mapa?.closePopup(); verColetasDoSite(vc.dataset.coletasSite); return; }
+  const ir = e.target.closest("[data-ir-site]");
+  if (ir && mapa) {
+    const s = state.sites.find(x => x.id === ir.dataset.irSite);
+    if (s) { mapa.setView([+s.lat, +s.lon], 11); $("#mapa-area").scrollIntoView({ behavior: "smooth", block: "center" }); }
+  }
+});
+$("#btn-nova-site").addEventListener("click", () => editarSite(null));
+$("#mapa-filtro-hemi").addEventListener("change", e => {
+  mapaSoHemiptera = !e.target.checked;
+  try { localStorage.setItem("phd-mapa-hemi", mapaSoHemiptera ? "hemi" : "todos"); } catch {}
+  desenharDadosMapa();
+});
+$("#mapa-celula").addEventListener("change", e => {
+  mapaCelula = +e.target.value;
+  try { localStorage.setItem("phd-mapa-celula", String(mapaCelula)); } catch {}
+  desenharDadosMapa();
+});
+$("#mapa-grade-vazia").addEventListener("change", e => { mapaGradeVazia = e.target.checked; desenharDadosMapa(); });
+$("#btn-minha-posicao").addEventListener("click", () => {
+  if (!mapa || !navigator.geolocation) return;
+  const st = $("#mapa-status");
+  st.textContent = "buscando sua posição…";
+  navigator.geolocation.getCurrentPosition(p => {
+    const ll = [p.coords.latitude, p.coords.longitude];
+    if (marcadorEu) marcadorEu.remove();
+    marcadorEu = L.circleMarker(ll, { radius: 8, color: "#ffffff", weight: 3, fillColor: "#e34948", fillOpacity: 1 })
+      .bindTooltip(`Você (±${Math.round(p.coords.accuracy)} m)`, { permanent: false });
+    marcadorEu.addTo(camadasDados);
+    mapa.setView(ll, Math.max(mapa.getZoom(), 11));
+    const perto = state.sites.filter(s => numOk(s.lat) && distKm(ll[0], ll[1], +s.lat, +s.lon) <= (+s.radius || SITE_RAIO_PADRAO));
+    st.textContent = `±${Math.round(p.coords.accuracy)} m` + (perto.length ? ` · dentro de: ${perto.map(s => s.name).join(", ")}` : "");
+  }, err => { st.textContent = err.code === 1 ? "permissão de localização negada" : "sem sinal de GPS"; },
+  { enableHighAccuracy: true, timeout: 20000 });
+});
+
 $("#coll-filtro").addEventListener("click", e => {
   if (e.target.closest("[data-limpar-filtro]")) { collFiltro = null; renderColl(); }
 });
@@ -2973,6 +3395,7 @@ const IMPORT_FIELDS = {
     { key: "rpb2", label: "RPB2", kind: "list", list: LAB_LOCUS, aliases: ["rpb2", "pcr rpb2"] },
     { key: "genome", label: "Genoma", kind: "list", list: LAB_GENOMA, aliases: ["genoma", "genome", "illumina", "wgs"] },
     { key: "genbank", label: "GenBank", aliases: ["genbank", "acessos", "accession", "accessions", "associatedsequences", "genbank accession"] },
+    { key: "site", label: "Localidade de campo", aliases: ["localidade de campo", "sitio", "site", "area de coleta", "ponto de coleta"] },
     { key: "gpsAcc", label: "Precisão GPS (m)", aliases: ["precisao gps m", "precisao gps", "precisao", "coordinateuncertaintyinmeters", "accuracy", "gps accuracy", "erro gps"] },
     { key: "notes", label: "Notas", aliases: ["notas", "nota", "notes", "obs", "observacoes", "remarks", "comentarios", "occurrenceremarks"] },
   ],
@@ -3334,7 +3757,7 @@ function renderDashLab() {
 }
 
 /* ================= render ================= */
-function renderAll() { renderGantt(); renderColl(); renderGrants(); renderCosts(); renderManu(); renderTrips(); renderDash(); }
+function renderAll() { renderGantt(); renderColl(); renderGrants(); renderCosts(); renderManu(); renderTrips(); renderDash(); if (mapa) desenharDadosMapa(); }
 boot();
 
 /* PWA: instalável e abre offline. Não roda em file:// (exige https ou localhost). */

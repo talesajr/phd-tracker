@@ -1,6 +1,6 @@
 /* Service worker do PhD Tracker: deixa o app abrir sem internet (campo).
  * Só cuida dos arquivos do próprio site — chamadas ao Supabase passam direto. */
-const CACHE = "phd-tracker-v1";
+const CACHE = "phd-tracker-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,11 @@ const SHELL = [
   "./icon-192.png",
   "./icon-512.png",
   "./apple-touch-icon.png",
+  "./vendor/leaflet/leaflet.min.js",
+  "./vendor/leaflet/leaflet.min.css",
+  "./vendor/leaflet/images/layers.png",
+  "./vendor/leaflet/images/layers-2x.png",
+  "./mapa/amazonia.json",
 ];
 
 self.addEventListener("install", (e) => {
