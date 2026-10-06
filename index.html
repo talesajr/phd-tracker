@@ -270,7 +270,8 @@
 
   /* ---- visão de planilha ---- */
   .grid-wrap { overflow: auto; max-height: 72vh; border: 1px solid var(--grid); border-radius: 10px; }
-  table.grid { border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+  /* display: table explícito: a classe utilitária .grid (cartões) faria disto um CSS grid */
+  table.grid { display: table; gap: 0; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
   table.grid th, table.grid td { border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); padding: 0; }
   table.grid th {
     position: sticky; top: 0; z-index: 3; background: var(--surface-1);
@@ -302,6 +303,40 @@
     font: inherit; font-size: 11px; border: 1px solid var(--border); border-bottom-width: 2px;
     border-radius: 4px; padding: 0 5px; color: var(--ink-2); background: var(--page);
   }
+
+  /* ---- planilha: seleção, ações, avisos ---- */
+  .grid-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .grid-bar .gsel-n { font-size: 12.5px; color: var(--ink-2); margin-right: 4px; }
+  .grid-bar .grow { flex: 1; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  table.grid td.rownum { display: table-cell; }
+  table.grid td.rownum, table.grid th.stick:first-child { text-align: left; padding: 0 6px; }
+  table.grid td.rownum span { display: inline-block; min-width: 22px; text-align: right; margin: 0 2px; }
+  table.grid input.gsel, table.grid input.gsel-todas { width: auto; padding: 0; margin: 0 3px; box-shadow: none; background: none; accent-color: var(--accent); vertical-align: middle; cursor: pointer; }
+  table.grid .gabrir {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
+    padding: 2px 4px; border-radius: 5px; vertical-align: middle;
+  }
+  table.grid .gabrir:hover { color: var(--accent); background: var(--page); }
+  table.grid tbody tr.sel td { background: color-mix(in srgb, var(--accent) 12%, var(--surface-1)) !important; }
+  table.grid tr.novo td { background: transparent; }
+  table.grid tr.novo td.rownum span { color: var(--accent); font-weight: 700; }
+  table.grid tr.novo input::placeholder { color: var(--muted); font-style: italic; }
+  table.grid input.dup { box-shadow: inset 0 0 0 2px var(--warning); }
+  table.grid input.ajustado, #modal-fields select.ajustado { animation: ajuste 1.3s ease-out; }
+  @keyframes ajuste { 0% { background: color-mix(in srgb, var(--warning) 45%, transparent); } 100% { background: transparent; } }
+  .dup-tag { font-size: 11px; font-weight: 600; color: var(--ink-2); background: color-mix(in srgb, var(--warning) 30%, transparent); border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 200;
+    background: var(--ink-1); color: var(--surface-1); border-radius: 10px; padding: 10px 14px;
+    display: flex; gap: 14px; align-items: center; font-size: 13px; box-shadow: 0 8px 28px rgba(0,0,0,0.25); max-width: calc(100vw - 32px);
+  }
+  #toast[hidden] { display: none; }
+  #toast button { border: 0; background: transparent; color: var(--accent-mid); font: inherit; font-weight: 700; cursor: pointer; padding: 0; }
+  table.prev.sug td { white-space: normal; max-width: none; vertical-align: middle; }
+  table.prev.sug .sug-val { width: 100%; min-width: 200px; font: inherit; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--ink-1); }
+  table.prev.sug .sug-n { color: var(--muted); font-size: 11.5px; margin-left: 4px; white-space: nowrap; }
+  table.prev.sug .sug-fonte { color: var(--ink-2); font-size: 11.5px; }
 
   /* ---- importação ---- */
   dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
@@ -453,7 +488,7 @@
         <button data-sub="mine" class="active">Minhas coletas</button>
         <button data-sub="ext">Amostras em coleções</button>
       </div>
-      <div class="seg" id="coll-view" hidden>
+      <div class="seg" id="coll-view">
         <button data-view="lista" class="active" title="Uma linha por registro, só leitura">☰ Lista</button>
         <button data-view="planilha" title="Editar direto nas células, como numa planilha">▦ Planilha</button>
       </div>
@@ -555,6 +590,22 @@
   <div class="modal-foot">
     <button type="button" class="btn ghost" id="imp-cancel">Cancelar</button>
     <button type="button" class="btn primary" id="imp-run" disabled>Importar</button>
+  </div>
+</dialog>
+
+<dialog id="sug-modal" class="wide">
+  <div class="modal-head" id="sug-titulo">Sugerir grupo do hospedeiro</div>
+  <div class="modal-body">
+    <div class="imp-note">Um nome por linha: aprovar preenche todos os registros com aquele hospedeiro (só os que estão sem grupo).
+      Fontes: o que você já aprovou antes, nomes populares e o <b>GBIF</b>. Sugestões com confiança abaixo de 90% vêm desmarcadas.</div>
+    <div class="prev-wrap"><table class="prev sug">
+      <thead><tr><th>✓</th><th>Hospedeiro</th><th>Grupo sugerido (editável)</th><th>Fonte</th></tr></thead>
+      <tbody id="sug-corpo"></tbody>
+    </table></div>
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn ghost" id="sug-cancelar">Cancelar</button>
+    <button type="button" class="btn primary" id="sug-aplicar" disabled>Aplicar</button>
   </div>
 </dialog>
 
@@ -1165,6 +1216,16 @@ $("#modal-fields").addEventListener("click", e => {
   if (btn) modalCtx?.onAction?.(btn.dataset.action);
 });
 $("#modal-cancel").addEventListener("click", () => modal.close());
+$("#modal-fields").addEventListener("change", e => {
+  if (e.target.name !== "host") return;
+  const sel = $("#modal-fields [name=hostGroup]");
+  if (!sel || sel.value) return;
+  const g = mapaAprendido(e.target.value);
+  if (!g) return;
+  if (![...sel.options].some(o => o.value === g)) sel.add(new Option(g, g));
+  sel.value = g;
+  sel.classList.remove("ajustado"); void sel.offsetWidth; sel.classList.add("ajustado");
+});
 $("#modal-delete").addEventListener("click", () => {
   if (modalCtx?.onDelete && confirm("Excluir este item?")) { modalCtx.onDelete(); modal.close(); save(); renderAll(); }
 });
@@ -1508,7 +1569,8 @@ function collMatches(obj, q) {
  * type: "nat" = ordem natural (TAJ9 < TAJ30 < TAJ178), "date" = ISO, "txt" = alfabética. */
 const COLL_COLS = {
   mine: [
-    { key: "code", label: "Coleta", type: "nat", cell: c => `<span style="font-weight:650; white-space:nowrap;">${esc(c.code || "—")}</span>` },
+    { key: "code", label: "Coleta", type: "nat", cell: c => `<span style="font-weight:650; white-space:nowrap;">${esc(c.code || "—")}</span>`
+        + (listaDups.has(normTxt(c.code)) ? ` <span class="dup-tag" title="Código repetido — renumere um dos registros">⚠ repetido</span>` : "") },
     { key: "date", label: "Data", type: "date", cls: "num", cell: c => esc(c.date || "—") },
     { key: "colltype", label: "Tipo", type: "txt", cell: c => esc(c.colltype || "—") },
     { key: "currentId", label: "ID atual", type: "txt", cell: c => `<i>${esc(c.currentId || "—")}</i>` },
@@ -1537,7 +1599,7 @@ const COLL_COLS = {
   ],
 };
 const collSort = { mine: { key: "date", dir: "desc" }, ext: { key: "collection", dir: "asc" } };
-let collView = "lista"; // "lista" (só leitura) ou "planilha" (edição direta nas células)
+let collView = (() => { try { return localStorage.getItem("phd-coll-view") === "planilha" ? "planilha" : "lista"; } catch { return "lista"; } })(); // "lista" (só leitura) ou "planilha" (edição direta nas células)
 
 /* Colunas da planilha: mostram todos os campos editáveis, não só o resumo da lista.
  * "norm" reaproveita os mesmos normalizadores do importador — dá para digitar
@@ -1614,32 +1676,107 @@ function collHeader(cols, sort) {
   }).join("") + "</tr>";
 }
 
-let gridRows = []; // registros mostrados na planilha, na ordem em que aparecem
+/* ================= planilha editável =================
+ * Seleção de linhas, preenchimento em lote, desfazer, sugestão de grupo do
+ * hospedeiro e uma linha em branco no fim para cadastrar direto na grade. */
+let gridRows = [];          // linhas desenhadas (até o limite), na ordem da tela
+let gridFiltered = [];      // todas as linhas que passam pela busca
+let gridSel = new Set();    // ids selecionados
+let gridAncora = null;      // índice do último clique, para Shift+clique
+let gridNovos = new Set();  // criados nesta sessão: continuam visíveis mesmo fora da busca
+let gridFoco = null;        // { id, key } para devolver o cursor depois de redesenhar
 
-function renderGrid(rows, cols, sort) {
-  gridRows = rows;
+const gridLista = () => (collSub === "mine" ? "collections" : "samples");
+const gridRec = id => state[gridLista()].find(x => x.id === id);
+const gridSelecionados = () => gridFiltered.filter(r => gridSel.has(r.id));
+const LARG_1A_COL = 98; // coluna fixa com caixinha, número e ↗
+
+function codigosDuplicados() {
+  const cont = new Map();
+  state.collections.forEach(c => { const k = normTxt(c.code); if (k) cont.set(k, (cont.get(k) || 0) + 1); });
+  return new Set([...cont].filter(([, n]) => n > 1).map(([k]) => k));
+}
+
+function renderGrid(rows, cols, sort, cap) {
+  const wrapAntigo = $("#coll-grid .grid-wrap");
+  const rolagem = wrapAntigo ? { top: wrapAntigo.scrollTop, left: wrapAntigo.scrollLeft } : null;
+  const ativo = document.activeElement;
+  if (!gridFoco && ativo && ativo.closest && ativo.closest("#coll-grid") && ativo.dataset.key) {
+    gridFoco = { id: ativo.closest("tr").dataset.id, key: ativo.dataset.key };
+  }
+
+  gridFiltered = rows;
+  gridRows = rows.slice(0, cap);
+  const vivos = new Set(state[gridLista()].map(r => r.id));
+  gridSel.forEach(id => { if (!vivos.has(id)) gridSel.delete(id); });
+  const dups = collSub === "mine" ? codigosDuplicados() : new Set();
+  const nSel = gridSelecionados().length;
+  const todos = rows.length > 0 && nSel === rows.length;
+
   const dl = (id, itens) => `<datalist id="${id}">${itens.map(v => `<option value="${esc(v)}"></option>`).join("")}</datalist>`;
   const cabecalho = cols.map(c => {
     const atual = c.key === sort.key;
     const seta = atual ? (sort.dir === "asc" ? "▲" : "▼") : "▾";
-    return `<th data-sort="${c.key}" class="${atual ? "sorted" : ""} ${c.stick ? "stick" : ""}"
-      style="min-width:${c.w}px" title="Ordenar por ${esc(c.label)}">${esc(c.label)}<span class="arrow">${seta}</span></th>`;
+    const fixo = c.stick ? `class="stick ${atual ? "sorted" : ""}" style="min-width:${c.w}px; left:${LARG_1A_COL}px"` : `class="${atual ? "sorted" : ""}" style="min-width:${c.w}px"`;
+    return `<th data-sort="${c.key}" ${fixo} title="Ordenar por ${esc(c.label)}">${esc(c.label)}<span class="arrow">${seta}</span></th>`;
   }).join("");
-  const corpo = rows.map((rec, i) => `<tr data-id="${rec.id}"><td class="rownum stick">${i + 1}</td>`
-    + cols.map((c, j) => `<td class="${c.stick ? "stick" : ""}" style="min-width:${c.w}px"><input value="${esc(rec[c.key] ?? "")}"
-        data-r="${i}" data-c="${j}" data-key="${c.key}" ${c.list ? `list="${c.list}"` : ""}
-        autocomplete="off" spellcheck="false"></td>`).join("")
-    + `</tr>`).join("");
+
+  const celula = (rec, c, i, j, novo) => {
+    const dup = c.key === "code" && dups.has(normTxt(rec.code));
+    const estilo = c.stick ? `min-width:${c.w}px; left:${LARG_1A_COL}px` : `min-width:${c.w}px`;
+    return `<td class="${c.stick ? "stick" : ""}" style="${estilo}"><input value="${esc(rec[c.key] ?? "")}"
+      data-r="${i}" data-c="${j}" data-key="${c.key}" ${novo ? 'data-new="1"' : ""} ${c.list ? `list="${c.list}"` : ""}
+      ${dup ? 'class="dup" title="Código repetido — renumere um dos registros"' : ""}
+      ${novo && j === 0 ? 'placeholder="+ nova linha"' : ""} autocomplete="off" spellcheck="false"></td>`;
+  };
+  const corpo = gridRows.map((rec, i) => `<tr data-id="${rec.id}" class="${gridSel.has(rec.id) ? "sel" : ""}">
+      <td class="rownum stick" style="min-width:${LARG_1A_COL}px">
+        <input type="checkbox" class="gsel" data-i="${i}" ${gridSel.has(rec.id) ? "checked" : ""} aria-label="Selecionar linha ${i + 1}">
+        <span>${i + 1}</span>
+        <button type="button" class="gabrir" title="Abrir o registro completo (GPS, fotos…)" aria-label="Abrir registro">↗</button>
+      </td>${cols.map((c, j) => celula(rec, c, i, j, false)).join("")}</tr>`).join("")
+    + `<tr class="novo" data-id=""><td class="rownum stick" style="min-width:${LARG_1A_COL}px"><span>+</span></td>`
+    + cols.map((c, j) => celula({}, c, gridRows.length, j, true)).join("") + `</tr>`;
+
+  const podeDesfazer = undoStack.length > 0;
   $("#coll-grid").innerHTML =
     dl("dl-grupo", HOST_FLAT) + dl("dl-tipo", COLL_TYPES) + dl("dl-simnao", ["sim", "nao"])
-    + `<div class="grid-wrap"><table class="grid"><thead><tr><th class="stick" style="min-width:34px"></th>${cabecalho}</tr></thead>`
+    + `<div class="grid-bar">
+        <span class="gsel-n">${nSel ? `<b>${nSel}</b> ${nSel === 1 ? "selecionada" : "selecionadas"}` : "Nenhuma linha selecionada"}</span>
+        <button type="button" class="btn ghost sm" data-gacao="preencher" ${nSel ? "" : "disabled"}>Preencher coluna…</button>
+        <button type="button" class="btn ghost sm" data-gacao="sugerir"
+          title="${nSel ? "Nas linhas selecionadas" : "Em todas as linhas visíveis"} com hospedeiro e sem grupo">Sugerir grupo do hospedeiro</button>
+        <button type="button" class="btn danger sm" data-gacao="excluir" ${nSel ? "" : "disabled"}>Excluir</button>
+        ${nSel ? `<button type="button" class="btn ghost sm" data-gacao="limpar">Limpar seleção</button>` : ""}
+        <span class="grow"></span>
+        <button type="button" class="btn ghost sm" data-gacao="desfazer" ${podeDesfazer ? "" : "disabled"}
+          title="${podeDesfazer ? "Desfazer: " + esc(undoStack[undoStack.length - 1].label) : "Nada para desfazer"}">↶ Desfazer</button>
+      </div>`
+    + `<div class="grid-wrap"><table class="grid"><thead><tr>
+        <th class="stick" style="min-width:${LARG_1A_COL}px; cursor:default">
+          <input type="checkbox" class="gsel-todas" ${todos ? "checked" : ""} title="Selecionar todas as linhas visíveis (${rows.length})" aria-label="Selecionar todas">
+        </th>${cabecalho}</tr></thead>`
     + `<tbody>${corpo}</tbody></table></div>`
     + `<div class="grid-help">Edite direto nas células — cada alteração salva sozinha.
-       <kbd>Enter</kbd>/<kbd>↓</kbd> desce · <kbd>Tab</kbd> avança · <kbd>Ctrl</kbd>+<kbd>D</kbd> repete o valor da célula de cima.
-       Datas, coordenadas e grupos são corrigidos automaticamente ao sair da célula.</div>`;
+       <kbd>Enter</kbd>/<kbd>↓</kbd> desce · <kbd>Tab</kbd> avança · <kbd>Ctrl</kbd>+<kbd>D</kbd> repete o valor de cima ·
+       <kbd>Ctrl</kbd>+<kbd>Z</kbd> desfaz · <kbd>Shift</kbd>+clique seleciona um intervalo.
+       Datas, coordenadas e grupos são corrigidos ao sair da célula (a célula pisca quando isso acontece).</div>`;
+
+  const cbTodas = $("#coll-grid .gsel-todas");
+  if (cbTodas) cbTodas.indeterminate = nSel > 0 && !todos;
+  const wrap = $("#coll-grid .grid-wrap");
+  if (wrap && rolagem) { wrap.scrollTop = rolagem.top; wrap.scrollLeft = rolagem.left; }
+  if (gridFoco) {
+    const linha = gridFoco.id ? [...document.querySelectorAll("#coll-grid tbody tr")].find(t => t.dataset.id === gridFoco.id) : null;
+    const alvo = linha && linha.querySelector(`input[data-key="${gridFoco.key}"]`);
+    if (alvo) alvo.focus({ preventScroll: false });
+    gridFoco = null;
+  }
 }
 
+let listaDups = new Set();
 function renderColl() {
+  listaDups = codigosDuplicados();
   const q = collQuery.toLowerCase().trim();
   document.querySelectorAll("#coll-seg button").forEach(b => b.classList.toggle("active", b.dataset.sub === collSub));
   $("#coll-seg [data-sub=mine]").textContent = `Minhas coletas (${state.collections.length})`;
@@ -1650,17 +1787,15 @@ function renderColl() {
   const mine = collSub === "mine";
   const cols = COLL_COLS[collSub], sort = collSort[collSub];
   const base = mine ? state.collections : state.samples;
-  const rows = sortColl(base.filter(r => collMatches(r, q)), cols, sort);
+  const colsOrdem = collView === "planilha" ? GRID_COLS[collSub] : cols;
+  const rows = sortColl(base.filter(r => collMatches(r, q) || (collView === "planilha" && gridNovos.has(r.id))), colsOrdem, sort);
+  document.querySelectorAll("#coll-view button").forEach(x => x.classList.toggle("active", x.dataset.view === collView));
 
   if (collView === "planilha") {
     t.closest(".tblwrap").style.display = "none";
     $("#coll-grid").style.display = "";
-    if (rows.length) renderGrid(rows.slice(0, CAP), GRID_COLS[collSub], sort);
-    else { $("#coll-grid").innerHTML = ""; gridRows = []; }
-    empty.style.display = rows.length ? "none" : "";
-    empty.textContent = q
-      ? (mine ? "Nenhuma coleta corresponde à busca." : "Nenhuma amostra corresponde à busca.")
-      : (mine ? "Nenhuma coleta registrada ainda — use “+ Nova coleta”." : "Nenhuma amostra cadastrada ainda.");
+    renderGrid(rows, GRID_COLS[collSub], sort, CAP); // sempre desenha: a linha em branco serve para cadastrar
+    empty.style.display = "none";
     $("#coll-count").textContent = `${rows.length} de ${base.length} ${mine ? "coletas" : "amostras"}`
       + (rows.length > CAP ? ` · editando as ${CAP} primeiras — use a busca para filtrar` : "");
     return;
@@ -1680,26 +1815,117 @@ function renderColl() {
 }
 $("#coll-seg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  collSub = b.dataset.sub; renderColl();
+  collSub = b.dataset.sub; gridSel.clear(); gridAncora = null; renderColl();
 });
 $("#coll-search").addEventListener("input", e => { collQuery = e.target.value; renderColl(); });
 $("#coll-view").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   collView = b.dataset.view;
-  document.querySelectorAll("#coll-view button").forEach(x => x.classList.toggle("active", x === b));
+  try { localStorage.setItem("phd-coll-view", collView); } catch {}
   renderColl();
 });
 
-/* ---- edição na planilha ---- */
+/* ================= desfazer =================
+ * Cada operação (uma célula, um preenchimento em lote, uma exclusão) é UM passo.
+ * entries: [{ id, before, index }] — before = cópia do registro antes (null se foi criado). */
+const undoStack = [];
+const UNDO_MAX = 50;
+function pushUndo(label, lista, entries) {
+  if (!entries.length) return;
+  undoStack.push({ label, lista, entries: entries.map(en => ({ ...en, before: en.before ? JSON.parse(JSON.stringify(en.before)) : null })) });
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+}
+function undo() {
+  const op = undoStack.pop();
+  if (!op) return;
+  const arr = state[op.lista];
+  // exclusões guardam os índices em ordem decrescente; ao inverter, reinsere do menor para o maior
+  [...op.entries].reverse().forEach(({ id, before, index }) => {
+    const i = arr.findIndex(x => x.id === id);
+    if (before === null) { if (i >= 0) arr.splice(i, 1); return; }
+    const { _u, ...dados } = before;
+    if (i >= 0) {
+      Object.keys(arr[i]).forEach(k => { if (k !== "id" && k !== "_u") delete arr[i][k]; });
+      Object.assign(arr[i], dados);
+    } else {
+      arr.splice(Math.min(index ?? arr.length, arr.length), 0, dados);
+    }
+  });
+  save(); renderColl(); renderDash();
+  toast(`Desfeito: ${op.label}`);
+}
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== "z") return;
+  if (document.querySelector("dialog[open]") || !undoStack.length) return;
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) {
+    // dentro de uma célula da planilha sem digitação pendente: desfaz a última operação
+    const pendente = a.dataset?.key && !a.dataset.new && gridRec(a.closest("tr")?.dataset.id || "")
+      ? String(gridRec(a.closest("tr").dataset.id)[a.dataset.key] ?? "") !== a.value
+      : true;
+    if (pendente) return; // deixa o desfazer de texto do próprio campo
+  }
+  e.preventDefault();
+  undo();
+});
+
+/* Avisos rápidos no rodapé, com "Desfazer" quando fizer sentido. */
+let toastTimer = null;
+function toast(msg, comDesfazer = false) {
+  let el = $("#toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast"; el.setAttribute("role", "status");
+    document.body.appendChild(el);
+    el.addEventListener("click", ev => { if (ev.target.closest("[data-toast-undo]")) { el.hidden = true; undo(); } });
+  }
+  el.innerHTML = `<span>${esc(msg)}</span>${comDesfazer ? `<button type="button" data-toast-undo>Desfazer</button>` : ""}`;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, comDesfazer ? 8000 : 3500);
+}
+
+/* ---- edição de célula ---- */
 const gridCols = () => GRID_COLS[collSub];
 function gridCommit(input) {
-  const rec = gridRows[+input.dataset.r];
-  if (!rec) return;
   const col = gridCols().find(c => c.key === input.dataset.key);
+  if (!col) return;
+  const digitado = input.value.trim();
   const novo = normCell(col, input.value);
-  input.value = novo;                       // mostra o valor já normalizado
-  if ((rec[col.key] ?? "") === novo) return; // nada mudou: não sincroniza à toa
+  const piscar = () => {
+    if (!novo || novo === digitado) return;
+    input.title = `Ajustado de “${digitado}”`;
+    input.classList.remove("ajustado"); void input.offsetWidth; input.classList.add("ajustado");
+  };
+  input.value = novo;
+
+  if (input.dataset.new) { // linha em branco do fim: vira registro ao receber o primeiro valor
+    if (!novo) return;
+    const rec = { id: uid(), [col.key]: novo };
+    if (collSub === "mine" && !rec.code) rec.code = nextCollCode();
+    if (col.key === "host") preencherGrupoAprendido(rec);
+    state[gridLista()].push(rec);
+    gridNovos.add(rec.id);
+    pushUndo("Nova linha", gridLista(), [{ id: rec.id, before: null }]);
+    gridFoco = { id: rec.id, key: col.key };
+    save(); renderColl();
+    return;
+  }
+
+  const rec = gridRec(input.closest("tr")?.dataset.id);
+  if (!rec) return;
+  if ((rec[col.key] ?? "") === novo) { piscar(); return; } // nada mudou: não sincroniza à toa
+  const antes = { ...rec };
   rec[col.key] = novo;
+  let extra = "";
+  if (col.key === "host" && preencherGrupoAprendido(rec)) {
+    const celGrupo = input.closest("tr").querySelector('input[data-key="hostGroup"]');
+    if (celGrupo) celGrupo.value = rec.hostGroup;
+    extra = ` (grupo: ${rec.hostGroup})`;
+  }
+  pushUndo(`${col.label} de ${rec.code || rec.collection || "registro"}${extra}`, gridLista(), [{ id: rec.id, before: antes }]);
+  if (col.key === "code") { save(); renderColl(); return; } // pode criar/desfazer duplicidade
+  piscar();
   save();
 }
 $("#coll-grid").addEventListener("change", e => {
@@ -1709,28 +1935,305 @@ $("#coll-grid").addEventListener("keydown", e => {
   const el = e.target;
   if (!el.matches("input[data-key]")) return;
   const r = +el.dataset.r, c = +el.dataset.c;
-  const ir = (dr) => {
+  const ir = dr => {
     const alvo = $(`#coll-grid input[data-r="${r + dr}"][data-c="${c}"]`);
-    if (alvo) { e.preventDefault(); gridCommit(el); alvo.focus(); alvo.select(); }
+    if (!alvo) return;
+    e.preventDefault();
+    if (el.dataset.new && el.value.trim()) { gridCommit(el); return; } // a linha nova redesenha a grade
+    gridCommit(el); alvo.focus(); alvo.select();
   };
   if (e.key === "Enter" || e.key === "ArrowDown") ir(e.shiftKey && e.key === "Enter" ? -1 : 1);
   else if (e.key === "ArrowUp") ir(-1);
-  else if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D")) { // repete o valor de cima
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") { // repete o valor de cima
     const acima = $(`#coll-grid input[data-r="${r - 1}"][data-c="${c}"]`);
     if (acima) { e.preventDefault(); el.value = acima.value; gridCommit(el); }
   } else if (e.key === "Escape") { // desfaz a digitação da célula
-    const rec = gridRows[r];
-    if (rec) { el.value = rec[el.dataset.key] ?? ""; el.blur(); }
+    const rec = gridRec(el.closest("tr")?.dataset.id || "");
+    el.value = rec ? rec[el.dataset.key] ?? "" : "";
+    el.blur();
   }
 });
-/* Clicar no cabeçalho da planilha ordena, igual à lista. */
+
+/* ---- cabeçalho, seleção, ↗ e barra de ações ---- */
 $("#coll-grid").addEventListener("click", e => {
-  const th = e.target.closest("th[data-sort]"); if (!th) return;
-  const sort = collSort[collSub], key = th.dataset.sort;
-  if (sort.key === key) sort.dir = sort.dir === "asc" ? "desc" : "asc";
-  else { sort.key = key; sort.dir = key === "date" ? "desc" : "asc"; }
-  renderColl();
+  const th = e.target.closest("th[data-sort]");
+  if (th) {
+    const sort = collSort[collSub], key = th.dataset.sort;
+    if (sort.key === key) sort.dir = sort.dir === "asc" ? "desc" : "asc";
+    else { sort.key = key; sort.dir = key === "date" ? "desc" : "asc"; }
+    renderColl();
+    const w = $("#coll-grid .grid-wrap"); if (w) w.scrollTop = 0; // nova ordem: volta ao topo
+    return;
+  }
+  if (e.target.closest(".gabrir")) { openRecord(collSub, e.target.closest("tr").dataset.id); return; }
+  if (e.target.matches(".gsel-todas")) {
+    if (e.target.checked) gridFiltered.forEach(r => gridSel.add(r.id)); else gridSel.clear();
+    gridAncora = null;
+    renderColl();
+    return;
+  }
+  if (e.target.matches(".gsel")) {
+    const i = +e.target.dataset.i;
+    const marcar = e.target.checked;
+    if (e.shiftKey && gridAncora !== null) {
+      const [a, b] = [Math.min(gridAncora, i), Math.max(gridAncora, i)];
+      for (let k = a; k <= b; k++) marcar ? gridSel.add(gridRows[k].id) : gridSel.delete(gridRows[k].id);
+    } else marcar ? gridSel.add(gridRows[i].id) : gridSel.delete(gridRows[i].id);
+    gridAncora = i;
+    renderColl();
+    return;
+  }
+  const acao = e.target.closest("[data-gacao]")?.dataset.gacao;
+  if (acao === "desfazer") undo();
+  else if (acao === "limpar") { gridSel.clear(); renderColl(); }
+  else if (acao === "excluir") gridExcluir();
+  else if (acao === "preencher") gridPreencher();
+  else if (acao === "sugerir") sugerirGrupos();
 });
+
+function gridExcluir() {
+  const alvos = gridSelecionados();
+  if (!alvos.length) return;
+  const nome = collSub === "mine" ? "coleta" : "amostra";
+  if (!confirm(`Excluir ${alvos.length} ${nome}${alvos.length > 1 ? "s" : ""}?\n\n`
+    + alvos.slice(0, 8).map(r => "• " + (r.code || r.collection || "(sem código)") + (r.currentId ? " — " + r.currentId : "")).join("\n")
+    + (alvos.length > 8 ? `\n… e mais ${alvos.length - 8}` : "")
+    + "\n\nDá para desfazer logo em seguida.")) return;
+  const arr = state[gridLista()];
+  const entries = alvos.map(r => ({ id: r.id, before: { ...r }, index: arr.findIndex(x => x.id === r.id) }))
+    .sort((a, b) => b.index - a.index);
+  entries.forEach(en => arr.splice(en.index, 1));
+  pushUndo(`Exclusão de ${entries.length} ${nome}${entries.length > 1 ? "s" : ""}`, gridLista(), entries);
+  gridSel.clear();
+  save(); renderColl(); renderDash();
+  toast(`${entries.length} ${nome}${entries.length > 1 ? "s excluídas" : " excluída"}.`, true);
+}
+
+function gridPreencher() {
+  const alvos = gridSelecionados();
+  if (!alvos.length) return;
+  const cols = gridCols().filter(c => !c.stick);
+  openModal({
+    title: `Preencher coluna em ${alvos.length} ${alvos.length === 1 ? "linha" : "linhas"}`,
+    fields: [
+      { key: "col", label: "Coluna", type: "select", options: cols.map(c => [c.key, c.label]) },
+      { key: "value", label: "Valor (datas, coordenadas e grupos são corrigidos automaticamente)" },
+      { key: "overwrite", label: "Linhas que já têm valor nessa coluna", type: "select",
+        options: [["nao", "Manter o valor que já existe (preenche só as vazias)"], ["sim", "Sobrescrever com o valor novo"]] },
+    ],
+    onSave: d => {
+      const col = cols.find(c => c.key === d.col);
+      const valor = normCell(col, d.value);
+      const sobrescrever = d.overwrite === "sim";
+      const mudar = alvos.filter(r => (sobrescrever || !String(r[col.key] ?? "").trim()) && (r[col.key] ?? "") !== valor);
+      if (!mudar.length) { toast("Nada mudou — todas as linhas já tinham valor nessa coluna."); return; }
+      const entries = mudar.map(r => ({ id: r.id, before: { ...r } }));
+      mudar.forEach(r => { r[col.key] = valor; });
+      pushUndo(`${col.label} em ${mudar.length} ${mudar.length === 1 ? "linha" : "linhas"}`, gridLista(), entries);
+      const pulou = alvos.length - mudar.length;
+      toast(`${col.label}: preenchido em ${mudar.length} ${mudar.length === 1 ? "linha" : "linhas"}`
+        + (pulou ? (pulou === 1 ? " (1 já tinha valor e ficou como estava)" : ` (${pulou} já tinham valor e ficaram como estavam)`) : "") + ".", true);
+    },
+  });
+}
+
+/* ================= sugestão do grupo do hospedeiro =================
+ * Fontes, nesta ordem: mapeamentos que você já aprovou → nomes populares →
+ * GBIF (base taxonômica global). Nada é aplicado sem você aprovar. */
+const NOMES_POPULARES = [
+  [["formiga", "formigas", "ant", "ants", "formicidae"], "Hymenoptera — Formicidae"],
+  [["vespa", "vespas", "wasp", "wasps", "abelha", "abelhas", "bee", "bees", "marimbondo"], "Hymenoptera"],
+  [["besouro", "besouros", "beetle", "beetles", "weevil", "weevils", "gorgulho", "vagalume", "firefly"], "Coleoptera"],
+  [["mariposa", "mariposas", "moth", "moths", "borboleta", "butterfly", "lagarta", "caterpillar"], "Lepidoptera"],
+  [["mosca", "moscas", "fly", "flies", "mosquito"], "Diptera"],
+  [["grilo", "grilos", "cricket", "crickets", "gafanhoto", "grasshopper", "esperanca", "katydid"], "Orthoptera"],
+  [["cigarra", "cigarras", "cicada", "cicadas"], "Hemiptera — Auchenorrhyncha"],
+  [["cigarrinha", "leafhopper", "planthopper", "froghopper", "spittlebug", "treehopper", "jequitiranaboia"], "Hemiptera — Auchenorrhyncha"],
+  [["percevejo", "percevejos", "stink bug", "assassin bug", "true bug"], "Hemiptera — Heteroptera"],
+  [["pulgao", "aphid", "cochonilha", "scale insect", "mealybug", "psilideo", "psyllid", "whitefly", "mosca branca"], "Hemiptera — Sternorrhyncha"],
+  [["aranha", "aranhas", "spider", "spiders", "aranae", "araneae"], "Araneae"],
+  [["cupim", "cupins", "termite", "termites"], "Blattodea — Isoptera"],
+  [["barata", "baratas", "cockroach", "roach"], "Blattodea"],
+  [["louva deus", "mantis", "mantid"], "Mantodea"],
+  [["bicho pau", "stick insect", "phasmid"], "Phasmatodea"],
+  [["opiliao", "harvestman"], "Opiliones"],
+  [["acaro", "mite", "carrapato", "tick"], "Acari"],
+  [["centopeia", "lacraia", "centipede"], "Chilopoda"],
+  [["piolho de cobra", "embua", "millipede"], "Diplopoda"],
+  [["libelula", "dragonfly", "damselfly"], "Odonata"],
+];
+const ISOPTERA = new Set(["termitidae", "rhinotermitidae", "kalotermitidae", "termopsidae", "archotermopsidae", "hodotermitidae",
+  "mastotermitidae", "serritermitidae", "stolotermitidae", "stylotermitidae"]);
+const HEMI_SUBORDEM = {};
+[["Auchenorrhyncha", "Cicadidae Cicadellidae Cercopidae Membracidae Fulgoridae Flatidae Derbidae Delphacidae Achilidae Cixiidae Dictyopharidae Issidae Nogodinidae Ricaniidae Aphrophoridae Clastopteridae Tettigarctidae Kinnaridae Meenoplidae Tropiduchidae Acanaloniidae Caliscelidae Eurybrachidae Lophopidae Aetalionidae Melizoderidae Epipygidae"],
+ ["Sternorrhyncha", "Aphididae Coccidae Pseudococcidae Diaspididae Margarodidae Monophlebidae Ortheziidae Eriococcidae Kerriidae Psyllidae Triozidae Aleyrodidae Phylloxeridae Adelgidae Asterolecaniidae Dactylopiidae Calophyidae Liviidae Carsidaridae Lecanodiaspididae Kermesidae Cerococcidae Putoidae Rhizoecidae"],
+ ["Heteroptera", "Pentatomidae Reduviidae Coreidae Lygaeidae Miridae Alydidae Pyrrhocoridae Largidae Scutelleridae Tingidae Rhopalidae Cydnidae Belostomatidae Nepidae Gerridae Veliidae Notonectidae Corixidae Aradidae Berytidae Anthocoridae Nabidae Enicocephalidae Thyreocoridae Plataspidae Acanthosomatidae Dinidoridae Tessaratomidae Urostylididae Rhyparochromidae Blissidae Geocoridae Oxycarenidae Saldidae Hydrometridae Mesoveliidae Naucoridae Gelastocoridae Ochteridae Pleidae Cimicidae Hebridae Leptopodidae Dipsocoridae Schizopteridae Ceratocombidae Microphysidae Joppeicidae"],
+ ["Coleorrhyncha", "Peloridiidae"]].forEach(([sub, fams]) => fams.split(" ").forEach(f => { HEMI_SUBORDEM[f.toLowerCase()] = sub; }));
+const ORDEM_SINONIMOS = { Uropygi: "Thelyphonida", Microcoryphia: "Archaeognatha", Thysanura: "Zygentoma", Embiidina: "Embioptera",
+  Phasmida: "Phasmatodea", Phthiraptera: "Psocodea", Isoptera: "Blattodea — Isoptera",
+  Ixodida: "Acari", Trombidiformes: "Acari", Sarcoptiformes: "Acari", Mesostigmata: "Acari", Opilioacarida: "Acari", Holothyrida: "Acari" };
+
+function grupoDoTaxon(t) {
+  const fam = String(t.family || "").toLowerCase(), ord = t.order || "", cls = t.class || "";
+  if (fam === "formicidae") return "Hymenoptera — Formicidae";
+  if (ISOPTERA.has(fam)) return "Blattodea — Isoptera";
+  if (ord === "Hemiptera") return HEMI_SUBORDEM[fam] ? "Hemiptera — " + HEMI_SUBORDEM[fam] : "Hemiptera (indet.)";
+  if (ORDEM_SINONIMOS[ord]) return ORDEM_SINONIMOS[ord];
+  if (HOST_FLAT.includes(ord)) return ord;
+  if (HOST_FLAT.includes(cls)) return cls; // Chilopoda, Diplopoda, Collembola…
+  return "";
+}
+function limparNomeHospedeiro(s) {
+  const t = String(s).replace(/\(.*?\)/g, " ")
+    .replace(/\b(sp|spp|cf|aff|nr|gr|complex|complexo|group|grupo|indet|larva|ninfa|adulto|degradado)\b\.?/gi, " ")
+    .replace(/[?]/g, " ").replace(/\s+/g, " ").trim();
+  return t.split(" ").filter(Boolean).slice(0, 2).join(" ");
+}
+function porNomePopular(host) {
+  const n = " " + normTxt(host) + " ";
+  for (const [termos, grupo] of NOMES_POPULARES) if (termos.some(t => n.includes(" " + normTxt(t) + " "))) return grupo;
+  return "";
+}
+const mapaAprendido = host => state.hostMap.find(m => m.id === "h:" + normTxt(host))?.group || "";
+/* Q14: hospedeiro já aprovado antes preenche o grupo sozinho (se estiver vazio). */
+function preencherGrupoAprendido(rec) {
+  if (!rec.host || String(rec.hostGroup ?? "").trim()) return false;
+  const g = mapaAprendido(rec.host);
+  if (g) { rec.hostGroup = g; return true; }
+  return false;
+}
+async function consultarGBIF(nome) {
+  const url = "https://api.gbif.org/v1/species/match?kingdom=Animalia&phylum=Arthropoda&name=" + encodeURIComponent(nome);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("GBIF " + r.status);
+  const j = await r.json();
+  const grupo = j && j.matchType !== "NONE" ? grupoDoTaxon(j) : "";
+  if (grupo) return { grupo, conf: j.confidence || 0, detalhe: [j.order, j.family].filter(Boolean).join(" · ") };
+  return consultarGBIFAmplo(nome);
+}
+/* Plano B: a árvore principal do GBIF não tem subfamílias (Ponerinae, Cicadinae…).
+ * A busca por nome em todas as listas tem — decide por votação entre os resultados. */
+async function consultarGBIFAmplo(nome) {
+  const r = await fetch("https://api.gbif.org/v1/species?limit=20&name=" + encodeURIComponent(nome));
+  if (!r.ok) return null;
+  const votos = new Map();
+  let validos = 0, exemplo = null;
+  ((await r.json()).results || []).forEach(res => {
+    if (/plant|fung|viridi|chromista|bacteria/i.test(res.kingdom || "")) return; // homônimos fora dos animais
+    const g = grupoDoTaxon(res);
+    if (!g) return;
+    validos++;
+    votos.set(g, (votos.get(g) || 0) + 1);
+    if (!exemplo && res.family) exemplo = res;
+  });
+  if (!validos) return null;
+  const [grupo, n] = [...votos].sort((a, b) => b[1] - a[1])[0];
+  return { grupo, conf: Math.round(100 * n / validos), detalhe: [exemplo?.order, exemplo?.family, "busca ampla"].filter(Boolean).join(" · ") };
+}
+
+async function sugerirGrupos() {
+  const base = gridSel.size ? gridSelecionados() : gridFiltered;
+  const alvos = base.filter(r => String(r.host ?? "").trim() && !String(r.hostGroup ?? "").trim());
+  if (!alvos.length) {
+    toast(gridSel.size ? "Nenhuma linha selecionada tem hospedeiro preenchido e grupo vazio." : "Nenhuma linha visível tem hospedeiro preenchido e grupo vazio.");
+    return;
+  }
+  const porHost = new Map();
+  alvos.forEach(r => {
+    const k = normTxt(r.host);
+    if (!porHost.has(k)) porHost.set(k, { host: String(r.host).trim(), ids: [] });
+    porHost.get(k).ids.push(r.id);
+  });
+  const itens = [...porHost.values()].sort((a, b) => b.ids.length - a.ids.length);
+
+  const dlg = $("#sug-modal");
+  const corpo = $("#sug-corpo");
+  $("#sug-titulo").textContent = `Sugerir grupo do hospedeiro — ${itens.length} ${itens.length === 1 ? "nome" : "nomes"}, ${alvos.length} ${alvos.length === 1 ? "registro" : "registros"}`;
+  corpo.innerHTML = itens.map((it, i) => `<tr data-i="${i}">
+      <td><input type="checkbox" class="sug-ok" aria-label="Aprovar"></td>
+      <td><b>${esc(it.host)}</b> <span class="sug-n">${it.ids.length} ${it.ids.length === 1 ? "registro" : "registros"}</span></td>
+      <td><input class="sug-val" list="dl-grupo" placeholder="consultando…" autocomplete="off"></td>
+      <td class="sug-fonte">…</td></tr>`).join("");
+  sugItens = itens;
+  $("#sug-aplicar").disabled = true;
+  dlg.showModal();
+
+  let fila = 0;
+  const resolver = async () => {
+    while (fila < itens.length) {
+      const i = fila++;
+      const it = itens[i];
+      const linha = corpo.querySelector(`tr[data-i="${i}"]`);
+      let sug = null;
+      const aprendido = mapaAprendido(it.host);
+      if (aprendido) sug = { grupo: aprendido, fonte: "aprovado antes", confiavel: true };
+      if (!sug) { const g = porNomePopular(it.host); if (g) sug = { grupo: g, fonte: "nome popular", confiavel: true }; }
+      if (!sug) {
+        const nome = limparNomeHospedeiro(it.host);
+        try {
+          const r = nome ? await consultarGBIF(nome) : null;
+          if (r) sug = { grupo: r.grupo, fonte: `GBIF · ${r.detalhe} · ${r.conf}%`, confiavel: r.conf >= 90 };
+        } catch (err) { if (linha) linha.querySelector(".sug-fonte").textContent = "sem conexão com o GBIF"; }
+      }
+      if (!linha || !dlg.open) continue;
+      const val = linha.querySelector(".sug-val");
+      val.placeholder = "sem sugestão — digite";
+      if (sug) {
+        val.value = sug.grupo;
+        linha.querySelector(".sug-fonte").textContent = sug.fonte;
+        linha.querySelector(".sug-ok").checked = sug.confiavel;
+      } else if (linha.querySelector(".sug-fonte").textContent === "…") {
+        linha.querySelector(".sug-fonte").textContent = "não encontrado";
+      }
+      atualizarBotaoSug();
+    }
+  };
+  await Promise.all([resolver(), resolver(), resolver(), resolver()]);
+}
+let sugItens = [];
+function atualizarBotaoSug() {
+  const marcadas = [...$("#sug-corpo").querySelectorAll("tr")].filter(t => t.querySelector(".sug-ok").checked && t.querySelector(".sug-val").value.trim());
+  const nRegs = marcadas.reduce((soma, t) => soma + (sugItens[+t.dataset.i]?.ids.length || 0), 0);
+  const b = $("#sug-aplicar");
+  b.disabled = !marcadas.length;
+  b.textContent = marcadas.length ? `Aplicar a ${nRegs} ${nRegs === 1 ? "registro" : "registros"}` : "Aplicar";
+}
+$("#sug-corpo").addEventListener("input", e => {
+  // editar a sugestão já marca a linha como aprovada
+  if (e.target.matches(".sug-val")) e.target.closest("tr").querySelector(".sug-ok").checked = !!e.target.value.trim();
+  atualizarBotaoSug();
+});
+$("#sug-corpo").addEventListener("change", atualizarBotaoSug);
+$("#sug-cancelar").addEventListener("click", () => $("#sug-modal").close());
+$("#sug-aplicar").addEventListener("click", () => {
+  const lista = gridLista();
+  const entries = [], aprendidos = [];
+  let n = 0;
+  $("#sug-corpo").querySelectorAll("tr").forEach(t => {
+    if (!t.querySelector(".sug-ok").checked) return;
+    const grupo = matchHostGroup(t.querySelector(".sug-val").value);
+    const it = sugItens[+t.dataset.i];
+    if (!grupo || !it) return;
+    it.ids.forEach(id => {
+      const rec = state[lista].find(x => x.id === id);
+      if (!rec || String(rec.hostGroup ?? "").trim()) return; // só preenche vazios
+      entries.push({ id, before: { ...rec } });
+      rec.hostGroup = grupo; n++;
+    });
+    aprendidos.push({ host: it.host, grupo });
+  });
+  // Q14: lembra o que você aprovou para preencher sozinho nos próximos registros
+  aprendidos.forEach(({ host, grupo }) => {
+    const id = "h:" + normTxt(host);
+    const m = state.hostMap.find(x => x.id === id);
+    if (m) { m.group = grupo; m.host = host; } else state.hostMap.push({ id, host, group: grupo });
+  });
+  pushUndo(`Grupo do hospedeiro em ${n} ${n === 1 ? "registro" : "registros"}`, lista, entries);
+  $("#sug-modal").close();
+  save(); renderColl(); renderDash();
+  toast(`Grupo preenchido em ${n} ${n === 1 ? "registro" : "registros"}.`, n > 0);
+});
+
 $("#coll-table").addEventListener("click", e => {
   const th = e.target.closest("th[data-sort]");
   if (th) {
@@ -1743,22 +2246,33 @@ $("#coll-table").addEventListener("click", e => {
   }
   if (e.target.closest("a")) return; // link de fotos: deixa abrir sem entrar na edição
   const row = e.target.closest("tr.rowlink"); if (!row) return;
-  if (row.dataset.kind === "mine") {
-    const c = state.collections.find(x => x.id === row.dataset.id);
-    openModal({
-      title: "Editar coleta " + (c.code || ""), fields: collFields(), values: c, onAction: gpsAction,
-      onSave: d => Object.assign(c, d),
-      onDelete: () => { state.collections = state.collections.filter(x => x.id !== c.id); },
-    });
-  } else {
-    const s = state.samples.find(x => x.id === row.dataset.id);
-    openModal({
-      title: "Editar amostra", fields: sampleFields(), values: s, onAction: gpsAction,
-      onSave: d => Object.assign(s, d),
-      onDelete: () => { state.samples = state.samples.filter(x => x.id !== s.id); },
-    });
-  }
+  openRecord(row.dataset.kind, row.dataset.id);
 });
+/* Abre a janela completa de um registro. Ao salvar, procura o registro pelo id
+ * (a sincronização pode ter trocado o objeto enquanto a janela estava aberta). */
+function openRecord(kind, id) {
+  const lista = kind === "mine" ? "collections" : "samples";
+  const rec = state[lista].find(x => x.id === id);
+  if (!rec) return;
+  const atual = () => state[lista].find(x => x.id === id);
+  openModal({
+    title: kind === "mine" ? "Editar coleta " + (rec.code || "") : "Editar amostra",
+    fields: kind === "mine" ? collFields() : sampleFields(), values: rec, onAction: gpsAction,
+    onSave: d => {
+      const alvo = atual();
+      if (!alvo) return;
+      const antes = { ...alvo };
+      Object.assign(alvo, d);
+      pushUndo(kind === "mine" ? "Edição de " + (alvo.code || "coleta") : "Edição de amostra", lista, [{ id, before: antes }]);
+    },
+    onDelete: () => {
+      const i = state[lista].findIndex(x => x.id === id);
+      if (i < 0) return;
+      pushUndo("Exclusão", lista, [{ id, before: { ...state[lista][i] }, index: i }]);
+      state[lista].splice(i, 1);
+    },
+  });
+}
 $("#btn-add-coll").addEventListener("click", () => {
   if (collSub === "mine") {
     openModal({
