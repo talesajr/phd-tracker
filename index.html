@@ -268,6 +268,41 @@
   .coords { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .count-note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
 
+  /* ---- visão de planilha ---- */
+  .grid-wrap { overflow: auto; max-height: 72vh; border: 1px solid var(--grid); border-radius: 10px; }
+  table.grid { border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+  table.grid th, table.grid td { border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); padding: 0; }
+  table.grid th {
+    position: sticky; top: 0; z-index: 3; background: var(--surface-1);
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    font-weight: 650; text-align: left; padding: 7px 8px; white-space: nowrap;
+    cursor: pointer; user-select: none;
+  }
+  table.grid th:hover { color: var(--ink-1); background: var(--page); }
+  table.grid th.sorted { color: var(--ink-1); }
+  table.grid th.sorted .arrow { color: var(--accent); }
+  table.grid th .arrow { margin-left: 4px; font-size: 8.5px; opacity: 0.4; }
+  table.grid th.sorted .arrow { opacity: 1; }
+  table.grid .stick { position: sticky; left: 0; z-index: 2; background: var(--surface-1); border-right: 1px solid var(--baseline); }
+  table.grid th.stick { z-index: 4; }
+  table.grid tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--page) 55%, transparent); }
+  table.grid tbody tr:nth-child(even) td.stick { background: color-mix(in srgb, var(--page) 92%, var(--surface-1)); }
+  table.grid input {
+    width: 100%; border: 0; background: transparent; color: var(--ink-1);
+    font: inherit; padding: 6px 8px; outline: none; border-radius: 0;
+  }
+  table.grid input:focus { background: var(--surface-1); box-shadow: inset 0 0 0 2px var(--accent); position: relative; z-index: 1; }
+  table.grid input::placeholder { color: transparent; }
+  table.grid td.rownum {
+    padding: 0 8px; color: var(--muted); font-size: 11px; text-align: right;
+    font-variant-numeric: tabular-nums; user-select: none; white-space: nowrap;
+  }
+  .grid-help { font-size: 12px; color: var(--muted); margin-top: 9px; line-height: 1.7; }
+  .grid-help kbd {
+    font: inherit; font-size: 11px; border: 1px solid var(--border); border-bottom-width: 2px;
+    border-radius: 4px; padding: 0 5px; color: var(--ink-2); background: var(--page);
+  }
+
   /* ---- importação ---- */
   dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
   dialog[open].wide { display: flex; flex-direction: column; }
@@ -418,10 +453,15 @@
         <button data-sub="mine" class="active">Minhas coletas</button>
         <button data-sub="ext">Amostras em coleções</button>
       </div>
+      <div class="seg" id="coll-view" hidden>
+        <button data-view="lista" class="active" title="Uma linha por registro, só leitura">☰ Lista</button>
+        <button data-view="planilha" title="Editar direto nas células, como numa planilha">▦ Planilha</button>
+      </div>
       <input type="search" id="coll-search" placeholder="Buscar por código, ID, hospedeiro, localidade…">
     </div>
     <div class="card">
       <div class="tblwrap"><table class="tbl" id="coll-table"></table></div>
+      <div id="coll-grid" style="display:none;"></div>
       <div id="coll-empty" class="empty" style="display:none;"></div>
       <div class="count-note" id="coll-count"></div>
     </div>
@@ -566,9 +606,67 @@ function seed() {
   return { activities: [], grants: [], costs: [], manuscripts: [], trips: [], collections: [], samples: [] };
 }
 
-let state = load();
-state.collections ??= [];   /* migração: bases criadas antes da v2 não têm estes campos */
-state.samples ??= [];
+/* ================= mesclagem por registro =================
+ * Cada item de cada lista guarda a hora da última alteração em `_u`, e as
+ * exclusões ficam em `_deleted` ({ id: hora }). Assim dois aparelhos que editaram
+ * coisas diferentes (celular offline em campo + notebook) juntam o trabalho em vez
+ * de um sobrescrever o outro. Ninguém precisa marcar `_u` à mão: o save() compara
+ * cada item com a última versão salva e carimba só o que mudou. */
+const LISTS = ["activities", "grants", "costs", "manuscripts", "trips", "collections", "samples", "hostMap"];
+const TOMBSTONE_TTL = 365 * 86400000; // marcas de exclusão com mais de 1 ano são descartadas
+
+function normalizeState(s) {
+  s = s && typeof s === "object" ? s : seed();
+  LISTS.forEach(k => { if (!Array.isArray(s[k])) s[k] = []; });
+  if (!s._deleted || typeof s._deleted !== "object") s._deleted = {};
+  return s;
+}
+const semCarimbo = item => { const { _u, ...resto } = item; return JSON.stringify(resto); };
+let lastSaved = new Map(); // id -> conteúdo (sem _u) da última versão salva
+function snapshotSaved() {
+  lastSaved = new Map();
+  LISTS.forEach(k => state[k].forEach(it => { if (it && it.id) lastSaved.set(it.id, semCarimbo(it)); }));
+}
+
+function mergeStates(a, b) {
+  a = normalizeState(a); b = normalizeState(b);
+  const del = { ...a._deleted };
+  Object.entries(b._deleted).forEach(([id, t]) => { if (!(del[id] >= t)) del[id] = t; });
+  const agora = Date.now();
+  Object.keys(del).forEach(id => { if (agora - del[id] > TOMBSTONE_TTL) delete del[id]; });
+  const out = { _deleted: del };
+  LISTS.forEach(k => {
+    const porId = new Map();
+    const ordem = [];
+    [a[k], b[k]].forEach(lista => lista.forEach(it => {
+      if (!it || !it.id) return;
+      const atual = porId.get(it.id);
+      if (!atual) { porId.set(it.id, it); ordem.push(it.id); }
+      else if ((it._u || 0) > (atual._u || 0)) porId.set(it.id, it);
+    }));
+    // excluído em algum aparelho e não editado depois disso -> some
+    out[k] = ordem.map(id => porId.get(id)).filter(it => !(del[it.id] >= (it._u || 0)));
+  });
+  // edição feita depois da exclusão "ressuscita" o item: limpa a marca
+  LISTS.forEach(k => out[k].forEach(it => { if (del[it.id] !== undefined && del[it.id] < (it._u || 0)) delete del[it.id]; }));
+  out._updatedAt = Math.max(a._updatedAt || 0, b._updatedAt || 0);
+  out._mergeV = 1;
+  return out;
+}
+/* Mesmo conteúdo? Compara lista a lista (a ordem das chaves de topo não importa).
+ * Evita gravações desnecessárias e redesenhos que fariam a planilha pular. */
+function sameData(x, y) {
+  if (!x || !y) return false;
+  for (const k of LISTS) {
+    const a = x[k] || [], b = y[k] || [];
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) return false;
+  }
+  const ord = o => JSON.stringify(Object.keys(o || {}).sort().map(k => [k, o[k]]));
+  return ord(x._deleted) === ord(y._deleted);
+}
+
+let state = normalizeState(load());
 function load() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -578,10 +676,65 @@ function load() {
   localStorage.setItem(LS_KEY, JSON.stringify(s));
   return s;
 }
+/* Cópia de segurança automática antes da primeira mesclagem por registro. */
+(function backupAntesDaMigracao() {
+  const K = "phd-tracker-backup-pre-mescla";
+  try {
+    if (!localStorage.getItem(K) && !state._mergeV) localStorage.setItem(K, JSON.stringify(state));
+  } catch { /* sem espaço: segue sem a cópia */ }
+})();
+/* Base local ainda no formato antigo (antes da mesclagem por registro)? Na primeira
+ * sincronização ela segue a regra antiga — vence a base inteira mais recente — para
+ * não ressuscitar itens excluídos em outro aparelho antes desta versão existir. */
+let LEGACY_LOCAL = !state._mergeV;
+state._mergeV = 1;
+snapshotSaved();
+
+function stampChanges() {
+  const agora = Date.now();
+  const vistos = new Set();
+  LISTS.forEach(k => state[k].forEach(it => {
+    if (!it || !it.id) return;
+    vistos.add(it.id);
+    const c = semCarimbo(it);
+    if (lastSaved.get(it.id) !== c) {
+      it._u = agora;
+      delete state._deleted[it.id];
+      lastSaved.set(it.id, c);
+    }
+  }));
+  lastSaved.forEach((_, id) => {
+    if (!vistos.has(id)) { state._deleted[id] = agora; lastSaved.delete(id); }
+  });
+}
 function save() {
+  stampChanges();
   state._updatedAt = Date.now();
   localStorage.setItem(LS_KEY, JSON.stringify(state));
   if (API_ON && getSession()) scheduleSync();
+}
+/* Substitui o estado inteiro (ex.: restaurar backup) mantendo as marcas coerentes. */
+function replaceState(novo) {
+  state = normalizeState(novo);
+  state._mergeV = 1;
+  stampChanges(); // o que sumiu em relação ao que havia vira exclusão
+  // restaurar backup = o backup vence: todos os itens ganham carimbo de agora
+  const agora = Date.now();
+  LISTS.forEach(k => state[k].forEach(it => { if (it && it.id) { it._u = agora; delete state._deleted[it.id]; } }));
+  // na próxima sincronização, o que estiver na nuvem e não no backup também sai
+  restauracaoPendente = { ids: new Set(LISTS.flatMap(k => state[k].map(it => it.id))), em: agora };
+  save();
+}
+let restauracaoPendente = null;
+function aplicarRestauracao(remote) {
+  if (!restauracaoPendente || !remote) return;
+  const { ids, em } = restauracaoPendente;
+  LISTS.forEach(k => remote[k].forEach(it => {
+    // só remove o que já existia antes da restauração (edições feitas depois continuam valendo)
+    if (it && it.id && !ids.has(it.id) && (it._u || 0) <= em) state._deleted[it.id] = em;
+  }));
+  restauracaoPendente = null;
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
 }
 
 /* ================= sincronização =================
@@ -665,15 +818,20 @@ const BACKENDS = {
     },
     async load(s) {
       const r = await fetch(this.doc(s.uid), { headers: { Authorization: "Bearer " + s.access_token } });
-      if (r.status === 404) return { ok: true, data: null };  // ainda não gravou nada
+      if (r.status === 404) return { ok: true, data: null, version: null };  // ainda não gravou nada
       if (!r.ok) return { ok: false, status: r.status };
       const j = await r.json();
       const raw = j.fields?.data?.stringValue;
-      return { ok: true, data: raw ? JSON.parse(raw) : null };
+      return { ok: true, data: raw ? JSON.parse(raw) : null, version: j.updateTime || null };
     },
-    async saveState(s, data) {
-      // PATCH com updateMask cria o documento se ele ainda não existir
-      const url = this.doc(s.uid) + "?updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt";
+    async saveState(s, data, version) {
+      // PATCH com updateMask cria o documento se ele ainda não existir.
+      // A pré-condição faz o Firestore recusar a gravação se outro aparelho gravou
+      // depois da nossa leitura — aí relemos, mesclamos e tentamos de novo.
+      let url = this.doc(s.uid) + "?updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt";
+      if (version !== undefined) {
+        url += version ? "&currentDocument.updateTime=" + encodeURIComponent(version) : "&currentDocument.exists=false";
+      }
       const r = await fetch(url, {
         method: "PATCH",
         headers: { Authorization: "Bearer " + s.access_token, "Content-Type": "application/json" },
@@ -682,7 +840,12 @@ const BACKENDS = {
           updatedAt: { integerValue: String(Date.now()) },
         } }),
       });
-      return { ok: r.ok, status: r.status };
+      // conflito de versão: Firestore responde 400 FAILED_PRECONDITION (ou 409)
+      let conflito = r.status === 409;
+      if (r.status === 400) {
+        try { conflito = (await r.clone().json())?.error?.status === "FAILED_PRECONDITION"; } catch {}
+      }
+      return { ok: r.ok, status: r.status, conflict: conflito };
     },
   },
 };
@@ -731,20 +894,72 @@ async function callApi(fn) {
   }
   return res;
 }
+/* Junta a base local com a da nuvem. Na primeira vez após a atualização usa a regra
+ * antiga (base inteira mais recente vence); depois, mescla registro a registro. */
+function combine(remote) {
+  if (!remote) return state;
+  if (LEGACY_LOCAL) {
+    LEGACY_LOCAL = false;
+    return normalizeState((remote._updatedAt || 0) >= (state._updatedAt || 0) ? remote : state);
+  }
+  return mergeStates(state, remote);
+}
+/* Adota a base mesclada. Se você estiver digitando ou com uma janela aberta, adia:
+ * a nuvem já recebeu a mescla, e a próxima sincronização traz tudo para a tela. */
+let adocaoPendente = false;
+const ocupado = () => {
+  const a = document.activeElement;
+  return !!document.querySelector("dialog[open]")
+    || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== "coll-search");
+};
+function adopt(merged) {
+  if (sameData(merged, state)) return;
+  if (ocupado()) { adocaoPendente = true; return; }
+  adocaoPendente = false;
+  state = normalizeState(merged);
+  state._mergeV = 1;
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
+  snapshotSaved();
+  renderAll();
+}
+const retomarAdocao = () => setTimeout(() => { if (adocaoPendente && !ocupado()) scheduleSync(); }, 80);
+document.addEventListener("focusout", retomarAdocao);
+document.querySelectorAll("dialog").forEach(d => d.addEventListener("close", retomarAdocao));
+setInterval(() => { if (adocaoPendente && !ocupado()) scheduleSync(); }, 4000); // reforço: nem todo blur gera focusout
+
+let pushing = false, pushAgain = false;
 async function pushState() {
   if (!getSession()) return;
-  const tamanho = JSON.stringify(state).length;
-  if (tamanho > DOC_LIMIT) {
-    setSync("err", "⚠ base grande demais — use Exportar");
-    console.warn(`Estado com ${tamanho} bytes excede o limite de ${DOC_LIMIT} para sincronizar.`);
-    return;
-  }
+  if (pushing) { pushAgain = true; return; }
+  pushing = true;
   try {
-    const r = await callApi(s => api.saveState(s, state));
-    if (r.ok) setSync("ok");
-    else if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); }
-    else setSync("err");
+    for (let tentativa = 0; tentativa < 4; tentativa++) {
+      const lido = await callApi(s => api.load(s));
+      if (lido.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); return; }
+      if (!lido.ok) { setSync("err"); return; }
+      const remote = lido.data ? normalizeState(lido.data) : null;
+      aplicarRestauracao(remote);
+      const merged = combine(remote);
+      adopt(merged);
+      if (remote && sameData(merged, remote)) { setSync("ok"); return; } // nuvem já está igual
+      const tamanho = JSON.stringify(merged).length;
+      if (tamanho > DOC_LIMIT) {
+        setSync("err", "⚠ base grande demais — use Exportar");
+        console.warn(`Estado com ${tamanho} bytes excede o limite de ${DOC_LIMIT} para sincronizar.`);
+        return;
+      }
+      const r = await callApi(s => api.saveState(s, merged, lido.version));
+      if (r.ok) { setSync("ok"); return; }
+      if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); return; }
+      if (!r.conflict) { setSync("err"); return; }
+      // outro aparelho gravou entre a leitura e a gravação: relê e mescla de novo
+    }
+    setSync("err");
   } catch { setSync("err"); }
+  finally {
+    pushing = false;
+    if (pushAgain) { pushAgain = false; scheduleSync(); }
+  }
 }
 
 function showLogin() {
@@ -763,17 +978,14 @@ async function boot() {
     const r = await callApi(s => api.load(s));
     if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); return; }
     if (!r.ok) throw new Error("falha ao carregar (" + r.status + ")");
-    const remote = r.data;
-    if (remote && (remote._updatedAt || 0) > (state._updatedAt || 0)) {
-      remote.collections ??= []; remote.samples ??= [];
-      state = remote;
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
-      setSync("ok");
-    } else if (state._updatedAt || state.activities.length || state.collections.length || state.manuscripts.length) {
-      pushState(); // dados locais mais novos (ou servidor vazio): envia
-    } else {
-      setSync("ok");
-    }
+    const remote = r.data ? normalizeState(r.data) : null;
+    const merged = combine(remote);
+    state = normalizeState(merged);
+    state._mergeV = 1;
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    snapshotSaved();
+    // nuvem vazia ou diferente do resultado da mescla: envia
+    if (!remote || !sameData(state, remote)) scheduleSync(); else setSync("ok");
   } catch { setSync("err"); } // sem rede: segue com o cache local
   startApp();
 }
@@ -894,8 +1106,8 @@ $("#btn-import").addEventListener("click", () => {
       try {
         const data = JSON.parse(txt);
         if (!data.activities || !data.manuscripts) throw new Error("estrutura inválida");
-        data.collections ??= []; data.samples ??= [];
-        state = data; save(); renderAll();
+        if (!confirm("Restaurar este backup? Ele substitui os dados atuais em todos os aparelhos.")) return;
+        replaceState(data); renderAll();
       } catch (err) { alert("Arquivo inválido: " + err.message); }
     });
   };
@@ -1325,6 +1537,58 @@ const COLL_COLS = {
   ],
 };
 const collSort = { mine: { key: "date", dir: "desc" }, ext: { key: "collection", dir: "asc" } };
+let collView = "lista"; // "lista" (só leitura) ou "planilha" (edição direta nas células)
+
+/* Colunas da planilha: mostram todos os campos editáveis, não só o resumo da lista.
+ * "norm" reaproveita os mesmos normalizadores do importador — dá para digitar
+ * 28/02/2023 numa data, 2°55'47.2"S numa coordenada ou "auchen" num grupo. */
+const GRID_COLS = {
+  mine: [
+    { key: "code", label: "Coleta", w: 92, type: "nat", stick: true },
+    { key: "date", label: "Data", w: 108, type: "date", norm: "date" },
+    { key: "currentId", label: "ID atual", w: 210, type: "txt" },
+    { key: "host", label: "Hospedeiro", w: 165, type: "txt" },
+    { key: "hostGroup", label: "Grupo do hospedeiro", w: 175, type: "txt", norm: "hostgroup", list: "dl-grupo" },
+    { key: "locality", label: "Localidade", w: 230, type: "txt" },
+    { key: "lat", label: "Latitude", w: 100, type: "txt", norm: "coord" },
+    { key: "lon", label: "Longitude", w: 100, type: "txt", norm: "coord" },
+    { key: "substrate", label: "Substrato", w: 155, type: "txt" },
+    { key: "colltype", label: "Tipo da coleção", w: 175, type: "txt", norm: "colltype", list: "dl-tipo" },
+    { key: "voucher", label: "Voucher", w: 115, type: "nat" },
+    { key: "barcode", label: "Barcode", w: 115, type: "nat" },
+    { key: "photographed", label: "Foto", w: 74, type: "txt", norm: "bool", list: "dl-simnao" },
+    { key: "photos", label: "Pasta de fotos", w: 160, type: "txt" },
+    { key: "notes", label: "Notas", w: 260, type: "txt" },
+  ],
+  ext: [
+    { key: "collection", label: "Coleção", w: 100, type: "nat", stick: true },
+    { key: "source", label: "Fonte", w: 140, type: "txt" },
+    { key: "currentId", label: "ID atual", w: 210, type: "txt" },
+    { key: "host", label: "Hospedeiro", w: 165, type: "txt" },
+    { key: "hostGroup", label: "Grupo do hospedeiro", w: 175, type: "txt", norm: "hostgroup", list: "dl-grupo" },
+    { key: "locality", label: "Localidade", w: 230, type: "txt" },
+    { key: "lat", label: "Latitude", w: 100, type: "txt", norm: "coord" },
+    { key: "lon", label: "Longitude", w: 100, type: "txt", norm: "coord" },
+    { key: "collector", label: "Coletor", w: 150, type: "txt" },
+    { key: "collDate", label: "Data de coleta", w: 120, type: "txt" },
+    { key: "determiner", label: "Determinador", w: 150, type: "txt" },
+    { key: "detDate", label: "Data de determinação", w: 130, type: "txt" },
+    { key: "notes", label: "Notas", w: 260, type: "txt" },
+  ],
+};
+/* Ao sair da célula o valor é normalizado do mesmo jeito que numa importação. */
+function normCell(col, valor) {
+  const v = String(valor ?? "").trim();
+  if (!v) return "";
+  switch (col.norm) {
+    case "date": return toISODate(v);
+    case "coord": return toCoord(v);
+    case "hostgroup": return matchHostGroup(v);
+    case "colltype": return matchFromList(v, COLL_TYPES);
+    case "bool": return toYesNo(v);
+    default: return v;
+  }
+}
 
 function sortColl(rows, cols, sort) {
   const col = cols.find(c => c.key === sort.key) || cols[0];
@@ -1350,6 +1614,31 @@ function collHeader(cols, sort) {
   }).join("") + "</tr>";
 }
 
+let gridRows = []; // registros mostrados na planilha, na ordem em que aparecem
+
+function renderGrid(rows, cols, sort) {
+  gridRows = rows;
+  const dl = (id, itens) => `<datalist id="${id}">${itens.map(v => `<option value="${esc(v)}"></option>`).join("")}</datalist>`;
+  const cabecalho = cols.map(c => {
+    const atual = c.key === sort.key;
+    const seta = atual ? (sort.dir === "asc" ? "▲" : "▼") : "▾";
+    return `<th data-sort="${c.key}" class="${atual ? "sorted" : ""} ${c.stick ? "stick" : ""}"
+      style="min-width:${c.w}px" title="Ordenar por ${esc(c.label)}">${esc(c.label)}<span class="arrow">${seta}</span></th>`;
+  }).join("");
+  const corpo = rows.map((rec, i) => `<tr data-id="${rec.id}"><td class="rownum stick">${i + 1}</td>`
+    + cols.map((c, j) => `<td class="${c.stick ? "stick" : ""}" style="min-width:${c.w}px"><input value="${esc(rec[c.key] ?? "")}"
+        data-r="${i}" data-c="${j}" data-key="${c.key}" ${c.list ? `list="${c.list}"` : ""}
+        autocomplete="off" spellcheck="false"></td>`).join("")
+    + `</tr>`).join("");
+  $("#coll-grid").innerHTML =
+    dl("dl-grupo", HOST_FLAT) + dl("dl-tipo", COLL_TYPES) + dl("dl-simnao", ["sim", "nao"])
+    + `<div class="grid-wrap"><table class="grid"><thead><tr><th class="stick" style="min-width:34px"></th>${cabecalho}</tr></thead>`
+    + `<tbody>${corpo}</tbody></table></div>`
+    + `<div class="grid-help">Edite direto nas células — cada alteração salva sozinha.
+       <kbd>Enter</kbd>/<kbd>↓</kbd> desce · <kbd>Tab</kbd> avança · <kbd>Ctrl</kbd>+<kbd>D</kbd> repete o valor da célula de cima.
+       Datas, coordenadas e grupos são corrigidos automaticamente ao sair da célula.</div>`;
+}
+
 function renderColl() {
   const q = collQuery.toLowerCase().trim();
   document.querySelectorAll("#coll-seg button").forEach(b => b.classList.toggle("active", b.dataset.sub === collSub));
@@ -1362,6 +1651,23 @@ function renderColl() {
   const cols = COLL_COLS[collSub], sort = collSort[collSub];
   const base = mine ? state.collections : state.samples;
   const rows = sortColl(base.filter(r => collMatches(r, q)), cols, sort);
+
+  if (collView === "planilha") {
+    t.closest(".tblwrap").style.display = "none";
+    $("#coll-grid").style.display = "";
+    if (rows.length) renderGrid(rows.slice(0, CAP), GRID_COLS[collSub], sort);
+    else { $("#coll-grid").innerHTML = ""; gridRows = []; }
+    empty.style.display = rows.length ? "none" : "";
+    empty.textContent = q
+      ? (mine ? "Nenhuma coleta corresponde à busca." : "Nenhuma amostra corresponde à busca.")
+      : (mine ? "Nenhuma coleta registrada ainda — use “+ Nova coleta”." : "Nenhuma amostra cadastrada ainda.");
+    $("#coll-count").textContent = `${rows.length} de ${base.length} ${mine ? "coletas" : "amostras"}`
+      + (rows.length > CAP ? ` · editando as ${CAP} primeiras — use a busca para filtrar` : "");
+    return;
+  }
+  t.closest(".tblwrap").style.display = "";
+  $("#coll-grid").style.display = "none";
+
   t.innerHTML = rows.length ? collHeader(cols, sort) +
     rows.slice(0, CAP).map(r => `<tr class="rowlink" data-kind="${collSub}" data-id="${r.id}">`
       + cols.map(c => `<td class="${c.cls || ""}">${c.cell(r)}</td>`).join("") + `</tr>`).join("") : "";
@@ -1377,6 +1683,54 @@ $("#coll-seg").addEventListener("click", e => {
   collSub = b.dataset.sub; renderColl();
 });
 $("#coll-search").addEventListener("input", e => { collQuery = e.target.value; renderColl(); });
+$("#coll-view").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  collView = b.dataset.view;
+  document.querySelectorAll("#coll-view button").forEach(x => x.classList.toggle("active", x === b));
+  renderColl();
+});
+
+/* ---- edição na planilha ---- */
+const gridCols = () => GRID_COLS[collSub];
+function gridCommit(input) {
+  const rec = gridRows[+input.dataset.r];
+  if (!rec) return;
+  const col = gridCols().find(c => c.key === input.dataset.key);
+  const novo = normCell(col, input.value);
+  input.value = novo;                       // mostra o valor já normalizado
+  if ((rec[col.key] ?? "") === novo) return; // nada mudou: não sincroniza à toa
+  rec[col.key] = novo;
+  save();
+}
+$("#coll-grid").addEventListener("change", e => {
+  if (e.target.matches("input[data-key]")) gridCommit(e.target);
+});
+$("#coll-grid").addEventListener("keydown", e => {
+  const el = e.target;
+  if (!el.matches("input[data-key]")) return;
+  const r = +el.dataset.r, c = +el.dataset.c;
+  const ir = (dr) => {
+    const alvo = $(`#coll-grid input[data-r="${r + dr}"][data-c="${c}"]`);
+    if (alvo) { e.preventDefault(); gridCommit(el); alvo.focus(); alvo.select(); }
+  };
+  if (e.key === "Enter" || e.key === "ArrowDown") ir(e.shiftKey && e.key === "Enter" ? -1 : 1);
+  else if (e.key === "ArrowUp") ir(-1);
+  else if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D")) { // repete o valor de cima
+    const acima = $(`#coll-grid input[data-r="${r - 1}"][data-c="${c}"]`);
+    if (acima) { e.preventDefault(); el.value = acima.value; gridCommit(el); }
+  } else if (e.key === "Escape") { // desfaz a digitação da célula
+    const rec = gridRows[r];
+    if (rec) { el.value = rec[el.dataset.key] ?? ""; el.blur(); }
+  }
+});
+/* Clicar no cabeçalho da planilha ordena, igual à lista. */
+$("#coll-grid").addEventListener("click", e => {
+  const th = e.target.closest("th[data-sort]"); if (!th) return;
+  const sort = collSort[collSub], key = th.dataset.sort;
+  if (sort.key === key) sort.dir = sort.dir === "asc" ? "desc" : "asc";
+  else { sort.key = key; sort.dir = key === "date" ? "desc" : "asc"; }
+  renderColl();
+});
 $("#coll-table").addEventListener("click", e => {
   const th = e.target.closest("th[data-sort]");
   if (th) {
