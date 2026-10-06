@@ -344,6 +344,16 @@
   details.mais-campos .mais-corpo { display: grid; gap: 12px; margin-top: 10px; }
   .acao-status { font-size: 12.5px; color: var(--ink-2); margin-left: 8px; font-variant-numeric: tabular-nums; }
 
+  /* ---- material examinado ---- */
+  .mat-opcoes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+  @media (max-width: 700px) { .mat-opcoes { grid-template-columns: minmax(0, 1fr); } }
+  .mat-saida {
+    font-family: "Times New Roman", Times, serif; font-size: 14.5px; line-height: 1.55; color: var(--ink-1);
+    background: var(--page); border: 1px solid var(--grid); border-radius: 8px; padding: 12px 14px;
+    max-height: 42vh; overflow: auto; user-select: text;
+  }
+  .mat-saida p { margin: 0 0 12px; }
+
   /* ---- importação ---- */
   dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
   dialog[open].wide { display: flex; flex-direction: column; }
@@ -486,6 +496,7 @@
       <span class="hint" id="coll-hint">Clique numa linha para ver/editar todos os campos.</span>
       <div class="grow"></div>
       <button class="btn ghost sm" id="btn-imp-coll">Importar planilha</button>
+      <button class="btn ghost sm" id="btn-mat" title="Gera a seção Material examined das coletas visíveis ou selecionadas">Material examinado</button>
       <button class="btn ghost sm" id="btn-csv-coll">Exportar CSV</button>
       <button class="btn primary sm" id="btn-add-coll">+ Nova coleta</button>
     </div>
@@ -612,6 +623,27 @@
   <div class="modal-foot">
     <button type="button" class="btn ghost" id="sug-cancelar">Cancelar</button>
     <button type="button" class="btn primary" id="sug-aplicar" disabled>Aplicar</button>
+  </div>
+</dialog>
+
+<dialog id="mat-modal" class="wide">
+  <div class="modal-head" id="mat-titulo">Material examinado</div>
+  <div class="modal-body">
+    <form id="mat-form" class="mat-opcoes" onsubmit="return false">
+      <div class="field"><label>Início de cada registro</label><input name="prefixo" placeholder="BRAZIL, Amazonas"></div>
+      <div class="field so-coletas"><label>Coletor (como aparece no artigo)</label><input name="coletor" placeholder="T. Alves Júnior"></div>
+      <div class="field so-coletas"><label>Herbário (sigla)</label><input name="herbario" placeholder="INPA"></div>
+      <div class="field"><label>Coordenadas</label><select name="coords"><option value="sim">Incluir</option><option value="nao">Omitir</option></select></div>
+      <div class="field"><label>Hospedeiro</label><select name="hospedeiro"><option value="sim">Incluir</option><option value="nao">Omitir</option></select></div>
+      <div class="field so-coletas"><label>Substrato</label><select name="substrato"><option value="sim">Incluir</option><option value="nao">Omitir</option></select></div>
+    </form>
+    <div class="imp-note" id="mat-resumo"></div>
+    <div class="mat-saida" id="mat-saida"></div>
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn ghost" id="mat-fechar">Fechar</button>
+    <button type="button" class="btn ghost" id="mat-copiar-txt">Copiar texto simples</button>
+    <button type="button" class="btn primary" id="mat-copiar">Copiar com itálico</button>
   </div>
 </dialog>
 
@@ -2381,6 +2413,146 @@ $("#btn-csv-coll").addEventListener("click", () => {
       state.samples.map(s => [s.source, s.collection, s.currentId, s.host, s.hostGroup, s.locality, s.lat, s.lon, s.collector, s.collDate, s.determiner, s.detDate, s.notes]));
   }
 });
+
+/* ================= material examinado =================
+ * Gera a seção "Material examined" no estilo dos periódicos de micologia, agrupada
+ * por espécie, a partir das coletas selecionadas (ou visíveis). Copia com itálico. */
+const MAT_PADRAO = { prefixo: "BRAZIL, Amazonas", coletor: "T. Alves Júnior", herbario: "INPA", hospedeiro: "sim", substrato: "sim", coords: "sim" };
+const matConfig = () => { try { return { ...MAT_PADRAO, ...JSON.parse(localStorage.getItem("phd-mat-config") || "{}") }; } catch { return { ...MAT_PADRAO }; } };
+const MESES_EN = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "Jun.", "Jul.", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."];
+
+function dataPeriodico(v) {
+  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${+m[3]} ${MESES_EN[+m[2] - 1]} ${m[1]}` : String(v || "").trim();
+}
+function grauMinSeg(dec, eixo) {
+  const n = parseFloat(dec);
+  if (isNaN(n)) return "";
+  let total = Math.round(Math.abs(n) * 3600);
+  const g = Math.floor(total / 3600); total -= g * 3600;
+  const m = Math.floor(total / 60), s = total - m * 60;
+  const hemi = eixo === "lat" ? (n < 0 ? "S" : "N") : (n < 0 ? "W" : "E");
+  return `${g}°${String(m).padStart(2, "0")}'${String(s).padStart(2, "0")}"${hemi}`;
+}
+/* Itálico só nos nomes latinos: sp., cf., aff., nov. e afins ficam em redondo. */
+const ROMANO = /^(\(.*|.*\)|sp\.?|spp\.?|cf\.?|aff\.?|nr\.?|nov\.?|s\.l\.?|s\.str\.?|sensu|lato|stricto|var\.?|subsp\.?|f\.|complex|group|gr\.?|grupo|larva|ninfa|adult|nymph|indet\.?|\?)[,;]?$/i;
+function italico(nome) {
+  return String(nome).split(/\s+/).filter(Boolean).reduce((acc, tok) => {
+    const limpo = tok.replace(/[,;]$/, "");
+    // família e acima (‑aceae, ‑idae, ‑inae, ‑ales…) ficam em redondo; só gênero e espécie em itálico
+    const acimaDeGenero = /(aceae|idae|inae|ini|ales|ineae|oidea|phyta|opsida|mycetes|mycota|optera|morpha)$/i.test(limpo);
+    const ital = !ROMANO.test(tok) && !acimaDeGenero && /^[A-Za-z][a-z\-]*[a-z]$/.test(limpo) && !/[—:]/.test(tok);
+    const html = esc(tok);
+    const ult = acc[acc.length - 1];
+    if (ult && ult.ital === ital) ult.txt += " " + html; else acc.push({ ital, txt: html });
+    return acc;
+  }, []).map(p => (p.ital ? `<i>${p.txt}</i>` : p.txt)).join(" ");
+}
+const grupoCurto = g => String(g || "").replace(/\s+—\s+/, ": ").replace(/\s*\(indet\.\)/, "");
+
+function matRegistro(r, cfg, mine) {
+  const partes = [], html = [];
+  const add = (t, h) => { if (t) { partes.push(t); html.push(h ?? esc(t)); } };
+  add(cfg.prefixo.trim());
+  add(String(r.locality || "").trim());
+  if (cfg.coords === "sim" && r.lat && r.lon) add(`${grauMinSeg(r.lat, "lat")} ${grauMinSeg(r.lon, "lon")}`);
+  if (cfg.hospedeiro === "sim" && r.host) {
+    const g = grupoCurto(r.hostGroup);
+    add(`on ${r.host}${g ? ` (${g})` : ""}`, `on ${italico(r.host)}${g ? ` (${esc(g)})` : ""}`);
+  }
+  if (mine && cfg.substrato === "sim" && r.substrate) add(`attached to ${r.substrate}`, `attached to ${italico(r.substrate)}`);
+  if (mine) {
+    add(dataPeriodico(r.date));
+    const num = [cfg.coletor.trim(), r.code].filter(Boolean).join(" ");
+    const voucher = String(r.voucher || "").trim();
+    const herb = voucher
+      ? (/^[A-Z]{2,}/.test(voucher) ? voucher : `${cfg.herbario.trim()} ${voucher}`.trim())
+      : "";
+    add(num + (herb ? ` (${herb})` : ""));
+  } else {
+    add(dataPeriodico(r.collDate));
+    add(r.collector ? `leg. ${r.collector}` : "");
+    add(r.collection ? `(${r.collection})` : "");
+  }
+  // "(INPA 123)" e "(IAN)" colam na parte anterior, sem vírgula
+  const juntar = arr => arr.reduce((s, p) => (s ? (p.startsWith("(") ? s + " " + p : s + ", " + p) : p), "");
+  return { texto: juntar(partes) + ".", html: juntar(html) + "." };
+}
+
+function matGerar(regs, cfg, mine) {
+  const porEspecie = new Map();
+  regs.forEach(r => {
+    const k = String(r.currentId || "").trim() || "(sem identificação)";
+    if (!porEspecie.has(k)) porEspecie.set(k, []);
+    porEspecie.get(k).push(r);
+  });
+  const especies = [...porEspecie.keys()].sort((a, b) => (a.startsWith("(") ? 1 : b.startsWith("(") ? -1 : a.localeCompare(b)));
+  const texto = [], html = [];
+  especies.forEach(esp => {
+    const lista = porEspecie.get(esp).sort((a, b) =>
+      String(a.date || a.collDate || "").localeCompare(String(b.date || b.collDate || ""))
+      || String(a.code || "").localeCompare(String(b.code || ""), "pt-BR", { numeric: true }));
+    const itens = lista.map(r => matRegistro(r, cfg, mine));
+    const rotulo = esp.startsWith("(") ? esc(esp) : `<b>${italico(esp)}</b>`;
+    texto.push(`${esp}\nMaterial examined: ${itens.map(i => i.texto.replace(/\.$/, "")).join("; ")}.`);
+    html.push(`<p>${rotulo}<br><b>Material examined</b>: ${itens.map(i => i.html.replace(/\.$/, "")).join("; ")}.</p>`);
+  });
+  return { texto: texto.join("\n\n"), html: html.join("\n"), especies: especies.length };
+}
+
+function matAlvos() {
+  const mine = collSub === "mine";
+  const base = mine ? state.collections : state.samples;
+  if (collView === "planilha" && gridSel.size) return gridSelecionados();
+  const q = collQuery.toLowerCase().trim();
+  return base.filter(r => collMatches(r, q));
+}
+function abrirMaterial() {
+  const regs = matAlvos();
+  const mine = collSub === "mine";
+  if (!regs.length) { toast("Nenhum registro visível — ajuste a busca ou a seleção."); return; }
+  const cfg = matConfig();
+  const dlg = $("#mat-modal");
+  $("#mat-titulo").textContent = `Material examinado — ${regs.length} ${regs.length === 1 ? "registro" : "registros"}`
+    + (collView === "planilha" && gridSel.size ? " selecionados" : collQuery.trim() ? " da busca" : "");
+  const f = $("#mat-form");
+  ["prefixo", "coletor", "herbario", "hospedeiro", "substrato", "coords"].forEach(k => { if (f.elements[k]) f.elements[k].value = cfg[k]; });
+  f.querySelectorAll(".so-coletas").forEach(el => { el.hidden = !mine; });
+  const atualizar = () => {
+    const c = { ...cfg };
+    ["prefixo", "coletor", "herbario", "hospedeiro", "substrato", "coords"].forEach(k => { if (f.elements[k]) c[k] = f.elements[k].value; });
+    try { localStorage.setItem("phd-mat-config", JSON.stringify(c)); } catch {}
+    const out = matGerar(regs, c, mine);
+    $("#mat-saida").innerHTML = out.html;
+    dlg._saida = out;
+    $("#mat-resumo").textContent = `${out.especies} ${out.especies === 1 ? "espécie" : "espécies"} · ${regs.length} ${regs.length === 1 ? "registro" : "registros"}`;
+  };
+  f.oninput = atualizar;
+  atualizar();
+  dlg.showModal();
+}
+async function copiarMaterial(comItalico) {
+  const out = $("#mat-modal")._saida;
+  if (!out) return;
+  try {
+    if (comItalico && window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([out.html], { type: "text/html" }),
+        "text/plain": new Blob([out.texto], { type: "text/plain" }),
+      })]);
+    } else await navigator.clipboard.writeText(out.texto);
+    toast(comItalico ? "Copiado com itálico — cole no Word ou no Google Docs." : "Copiado como texto simples.");
+  } catch {
+    // sem permissão de área de transferência: seleciona o texto para copiar à mão
+    const sel = getSelection(), rng = document.createRange();
+    rng.selectNodeContents($("#mat-saida")); sel.removeAllRanges(); sel.addRange(rng);
+    toast("Não consegui copiar sozinho — o texto está selecionado: use Ctrl+C.");
+  }
+}
+$("#btn-mat").addEventListener("click", abrirMaterial);
+$("#mat-copiar").addEventListener("click", () => copiarMaterial(true));
+$("#mat-copiar-txt").addEventListener("click", () => copiarMaterial(false));
+$("#mat-fechar").addEventListener("click", () => $("#mat-modal").close());
 
 /* ================= importação de planilhas (CSV / TSV / XLSX) =================
  * Lê o arquivo no próprio dispositivo, adivinha o mapeamento das colunas,
