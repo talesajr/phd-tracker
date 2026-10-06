@@ -308,6 +308,7 @@
   .grid-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
   .grid-bar .gsel-n { font-size: 12.5px; color: var(--ink-2); margin-right: 4px; }
   .grid-bar .grow { flex: 1; }
+  .seg-sm button { padding: 4px 11px; font-size: 12px; }
   .btn:disabled { opacity: 0.45; cursor: default; }
   table.grid td.rownum { display: table-cell; }
   table.grid td.rownum, table.grid th.stick:first-child { text-align: left; padding: 0 6px; }
@@ -412,6 +413,19 @@
   .dash-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
   .dash-item .when { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .dash-item .what { flex: 1; }
+  .lab-linha { display: grid; grid-template-columns: 62px 1fr 56px; align-items: center; gap: 10px; font-size: 13px; }
+  .lab-rot { color: var(--ink-2); font-weight: 600; font-size: 12px; }
+  .lab-barra { display: flex; gap: 2px; height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .lab-barra i, .lab-legenda i { display: block; height: 100%; }
+  .lab-barra i:first-child { border-radius: 4px 0 0 4px; }
+  :is(.lab-barra, .lab-legenda) .ok { background: var(--good); }
+  :is(.lab-barra, .lab-legenda) .meio { background: var(--accent); }
+  :is(.lab-barra, .lab-legenda) .falha { background: var(--critical); }
+  .lab-num { text-align: right; font-variant-numeric: tabular-nums; } .lab-num small { color: var(--muted); }
+  .lab-legenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .lab-legenda span { display: inline-flex; align-items: center; gap: 5px; }
+  .lab-legenda i { width: 10px; height: 10px; border-radius: 2px; }
+  .lab-legenda .lab-gb { margin-left: auto; color: var(--ink-2); }
   .mini-pbar { display: grid; grid-template-columns: 1fr 90px 40px; align-items: center; gap: 10px; font-size: 13px; }
   .mini-pbar .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mini-pbar .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12.5px; }
@@ -467,6 +481,10 @@
       <div class="card">
         <h3 class="blk">Resumo do acervo</h3>
         <div class="dash-list" id="dash-acervo"></div>
+      </div>
+      <div class="card">
+        <h3 class="blk">Laboratório</h3>
+        <div class="dash-list" id="dash-lab"></div>
       </div>
     </div>
   </section>
@@ -1123,6 +1141,12 @@ const HOST_GROUPS = {
   "Entognatha": ["Collembola", "Diplura", "Protura"],
   "Outro": ["Arthropoda (indet.)", "Outro"],
 };
+/* Pipeline de laboratório por espécime (Objetivos 2 e 3 do projeto). */
+const LAB_CULTURA = ["isolada", "em andamento", "falhou", "não tentada"];
+const LAB_DNA = ["extraído", "falhou"];
+const LAB_LOCUS = ["sequenciado", "PCR ok", "falhou"];
+const LAB_GENOMA = ["montado", "sequenciado", "enviado"];
+const LOCI = [["ssu", "SSU"], ["lsu", "LSU"], ["tef1", "TEF1-α"], ["rpb1", "RPB1"], ["rpb2", "RPB2"]];
 const COLL_TYPES = ["Fungo + hospedeiro + substrato", "Fungo + hospedeiro", "Apenas fungo", "Cultura viva", "Amostra de DNA/sílica", "Outra"];
 
 /* Fotos no Google Drive: se houver link salvo, usa ele; senão procura pelo código
@@ -1583,6 +1607,11 @@ function collFields({ campo = false } = {}) {
     { key: "photos", label: "Pasta de fotos (link do Google Drive — opcional)", more: depois },
     { key: "drive", label: "🔍 Abrir as fotos desta coleta no Drive", type: "button", more: depois },
     { key: "notes", label: "Notas", type: "textarea" },
+    { key: "culture", label: "Cultura", type: "select", half: true, more: true, options: [["", "—"], ...LAB_CULTURA.map(v => [v, v])] },
+    { key: "dna", label: "DNA", type: "select", half: true, more: true, options: [["", "—"], ...LAB_DNA.map(v => [v, v])] },
+    ...LOCI.map(([k, rot]) => ({ key: k, label: rot, type: "select", half: true, more: true, options: [["", "—"], ...LAB_LOCUS.map(v => [v, v])] })),
+    { key: "genome", label: "Genoma", type: "select", half: true, more: true, options: [["", "—"], ...LAB_GENOMA.map(v => [v, v])] },
+    { key: "genbank", label: "GenBank (acessos, separados por vírgula)", more: true },
   ];
 }
 function sampleFields() {
@@ -1719,6 +1748,11 @@ const GRID_COLS = {
     { key: "photographed", label: "Foto", w: 74, type: "txt", norm: "bool", list: "dl-simnao" },
     { key: "photos", label: "Pasta de fotos", w: 160, type: "txt" },
     { key: "notes", label: "Notas", w: 260, type: "txt" },
+    { key: "culture", label: "Cultura", w: 120, type: "txt", norm: "lista", opcoes: LAB_CULTURA, list: "dl-cultura", lab: true },
+    { key: "dna", label: "DNA", w: 100, type: "txt", norm: "lista", opcoes: LAB_DNA, list: "dl-dna", lab: true },
+    ...LOCI.map(([k, rot]) => ({ key: k, label: rot, w: 108, type: "txt", norm: "lista", opcoes: LAB_LOCUS, list: "dl-locus", lab: true })),
+    { key: "genome", label: "Genoma", w: 115, type: "txt", norm: "lista", opcoes: LAB_GENOMA, list: "dl-genoma", lab: true },
+    { key: "genbank", label: "GenBank (acessos)", w: 210, type: "txt", lab: true },
   ],
   ext: [
     { key: "collection", label: "Coleção", w: 100, type: "nat", stick: true },
@@ -1746,6 +1780,7 @@ function normCell(col, valor) {
     case "hostgroup": return matchHostGroup(v);
     case "colltype": return matchFromList(v, COLL_TYPES);
     case "bool": return toYesNo(v);
+    case "lista": return matchFromList(v, col.opcoes);
     case "num": { const n = parseFloat(v.replace(",", ".").replace(/[^\d.\-]/g, "")); return isNaN(n) ? v : String(Math.round(n * 10) / 10); }
     default: return v;
   }
@@ -1784,6 +1819,14 @@ let gridSel = new Set();    // ids selecionados
 let gridAncora = null;      // índice do último clique, para Shift+clique
 let gridNovos = new Set();  // criados nesta sessão: continuam visíveis mesmo fora da busca
 let gridFoco = null;        // { id, key } para devolver o cursor depois de redesenhar
+/* Grupos de colunas (só nas coletas): o pipeline de laboratório deixa a grade larga demais. */
+let gridGrupo = (() => { try { return localStorage.getItem("phd-grid-grupo") || "coleta"; } catch { return "coleta"; } })();
+function gridColsVisiveis() {
+  const todas = GRID_COLS[collSub];
+  if (collSub !== "mine" || gridGrupo === "todas") return todas;
+  if (gridGrupo === "lab") return todas.filter(c => ["code", "currentId", "host"].includes(c.key) || c.lab);
+  return todas.filter(c => !c.lab);
+}
 
 const gridLista = () => (collSub === "mine" ? "collections" : "samples");
 const gridRec = id => state[gridLista()].find(x => x.id === id);
@@ -1840,6 +1883,12 @@ function renderGrid(rows, cols, sort, cap) {
   const podeDesfazer = undoStack.length > 0;
   $("#coll-grid").innerHTML =
     dl("dl-grupo", HOST_FLAT) + dl("dl-tipo", COLL_TYPES) + dl("dl-simnao", ["sim", "nao"])
+    + dl("dl-cultura", LAB_CULTURA) + dl("dl-dna", LAB_DNA) + dl("dl-locus", LAB_LOCUS) + dl("dl-genoma", LAB_GENOMA)
+    + (collSub === "mine" ? `<div class="grid-bar"><span class="gsel-n">Colunas:</span>
+        <div class="seg seg-sm" id="grid-grupos">
+          ${[["coleta", "Coleta"], ["lab", "Laboratório"], ["todas", "Todas"]].map(([v, r]) =>
+            `<button type="button" data-ggrupo="${v}" class="${gridGrupo === v ? "active" : ""}">${r}</button>`).join("")}
+        </div></div>` : "")
     + `<div class="grid-bar">
         <span class="gsel-n">${nSel ? `<b>${nSel}</b> ${nSel === 1 ? "selecionada" : "selecionadas"}` : "Nenhuma linha selecionada"}</span>
         <button type="button" class="btn ghost sm" data-gacao="preencher" ${nSel ? "" : "disabled"}>Preencher coluna…</button>
@@ -1893,7 +1942,7 @@ function renderColl() {
   if (collView === "planilha") {
     t.closest(".tblwrap").style.display = "none";
     $("#coll-grid").style.display = "";
-    renderGrid(rows, GRID_COLS[collSub], sort, CAP); // sempre desenha: a linha em branco serve para cadastrar
+    renderGrid(rows, gridColsVisiveis(), sort, CAP); // sempre desenha: a linha em branco serve para cadastrar
     empty.style.display = "none";
     $("#coll-count").textContent = `${rows.length} de ${base.length} ${mine ? "coletas" : "amostras"}`
       + (rows.length > CAP ? ` · editando as ${CAP} primeiras — use a busca para filtrar` : "");
@@ -2082,6 +2131,13 @@ $("#coll-grid").addEventListener("click", e => {
     renderColl();
     return;
   }
+  const grupo = e.target.closest("[data-ggrupo]")?.dataset.ggrupo;
+  if (grupo) {
+    gridGrupo = grupo;
+    try { localStorage.setItem("phd-grid-grupo", grupo); } catch {}
+    renderColl();
+    return;
+  }
   const acao = e.target.closest("[data-gacao]")?.dataset.gacao;
   if (acao === "desfazer") undo();
   else if (acao === "limpar") { gridSel.clear(); renderColl(); }
@@ -2111,7 +2167,7 @@ function gridExcluir() {
 function gridPreencher() {
   const alvos = gridSelecionados();
   if (!alvos.length) return;
-  const cols = gridCols().filter(c => !c.stick);
+  const cols = GRID_COLS[collSub].filter(c => !c.stick);
   openModal({
     title: `Preencher coluna em ${alvos.length} ${alvos.length === 1 ? "linha" : "linhas"}`,
     fields: [
@@ -2405,8 +2461,8 @@ $("#btn-csv-coll").addEventListener("click", () => {
   const today = hojeLocal();
   if (collSub === "mine") {
     csvDownload(`coletas-${today}.csv`,
-      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Precisão GPS (m)", "Substrato", "Pasta de fotos", "Notas"],
-      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.lat, c.lon, c.gpsAcc, c.substrate, c.photos, c.notes]));
+      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Precisão GPS (m)", "Substrato", "Pasta de fotos", "Notas", "Cultura", "DNA", "SSU", "LSU", "TEF1", "RPB1", "RPB2", "Genoma", "GenBank"],
+      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.lat, c.lon, c.gpsAcc, c.substrate, c.photos, c.notes, c.culture, c.dna, c.ssu, c.lsu, c.tef1, c.rpb1, c.rpb2, c.genome, c.genbank]));
   } else {
     csvDownload(`amostras-colecoes-${today}.csv`,
       ["Fonte", "Coleção", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Coletor", "Data de coleta", "Determinador", "Data de determinação", "Notas"],
@@ -2748,6 +2804,15 @@ const IMPORT_FIELDS = {
     { key: "lon", label: "Longitude", kind: "coord", hemiAliases: ["ew", "we"], aliases: ["decimallongitude", "ddlong", "longitude", "lon", "long", "lng", "dmslong", "x"] },
     { key: "substrate", label: "Substrato", aliases: ["substrato", "substrate", "plant", "planta", "subunit int bryo", "subunit ext bryo", "bryo"] },
     { key: "photos", label: "Pasta de fotos", aliases: ["pasta de fotos", "fotos", "photos", "link", "url", "drive", "pasta", "folder"] },
+    { key: "culture", label: "Cultura", kind: "list", list: LAB_CULTURA, aliases: ["cultura", "culture", "isolado", "isolate", "isolamento"] },
+    { key: "dna", label: "DNA", kind: "list", list: LAB_DNA, aliases: ["dna", "extracao", "extracao de dna", "dna extraction"] },
+    { key: "ssu", label: "SSU", kind: "list", list: LAB_LOCUS, aliases: ["ssu", "pcr ssu", "18s", "nssu"] },
+    { key: "lsu", label: "LSU", kind: "list", list: LAB_LOCUS, aliases: ["lsu", "pcr lsu", "28s", "nlsu"] },
+    { key: "tef1", label: "TEF1-α", kind: "list", list: LAB_LOCUS, aliases: ["tef1", "pcr tef1", "tef", "tef1a", "tef 1", "ef1a"] },
+    { key: "rpb1", label: "RPB1", kind: "list", list: LAB_LOCUS, aliases: ["rpb1", "pcr rpb1"] },
+    { key: "rpb2", label: "RPB2", kind: "list", list: LAB_LOCUS, aliases: ["rpb2", "pcr rpb2"] },
+    { key: "genome", label: "Genoma", kind: "list", list: LAB_GENOMA, aliases: ["genoma", "genome", "illumina", "wgs"] },
+    { key: "genbank", label: "GenBank", aliases: ["genbank", "acessos", "accession", "accessions", "associatedsequences", "genbank accession"] },
     { key: "gpsAcc", label: "Precisão GPS (m)", aliases: ["precisao gps m", "precisao gps", "precisao", "coordinateuncertaintyinmeters", "accuracy", "gps accuracy", "erro gps"] },
     { key: "notes", label: "Notas", aliases: ["notas", "nota", "notes", "obs", "observacoes", "remarks", "comentarios", "occurrenceremarks"] },
   ],
@@ -3073,6 +3138,39 @@ function renderDash() {
     <div class="dash-item"><span class="what">— fotografadas</span><b>${nFoto}</b></div>
     <div class="dash-item"><span class="what">— com voucher de herbário</span><b>${nVou}</b></div>
     <div class="dash-item"><span class="what">Amostras em coleções</span><b>${state.samples.length}</b></div>`;
+  renderDashLab();
+}
+/* Progresso do laboratório: uma barra por etapa, dividida em concluído / em andamento / falhou.
+ * A base dos loci são as coletas com DNA extraído (ou todas, enquanto nenhuma tiver). */
+function renderDashLab() {
+  const C = state.collections, total = C.length;
+  const comDNA = C.filter(c => c.dna === "extraído").length;
+  const conta = (k, v) => C.filter(c => c[k] === v).length;
+  const linha = (rotulo, base, ok, meio, falha, legenda) => {
+    const pct = n => (base ? (100 * n / base).toFixed(1) : 0);
+    return `<div class="lab-linha" title="${esc(legenda)}">
+      <span class="lab-rot">${esc(rotulo)}</span>
+      <span class="lab-barra" role="img" aria-label="${esc(legenda)}">
+        ${ok ? `<i class="ok" style="width:${pct(ok)}%"></i>` : ""}${meio ? `<i class="meio" style="width:${pct(meio)}%"></i>` : ""}${falha ? `<i class="falha" style="width:${pct(falha)}%"></i>` : ""}
+      </span>
+      <span class="lab-num">${ok}<small>/${base}</small></span></div>`;
+  };
+  const baseLoci = comDNA || total;
+  const htmlLoci = LOCI.map(([k, rot]) => {
+    const seq = conta(k, "sequenciado"), pcr = conta(k, "PCR ok"), f = conta(k, "falhou");
+    return linha(rot, baseLoci, seq, pcr, f, `${rot}: ${seq} sequenciados, ${pcr} com PCR ok, ${f} falharam, de ${baseLoci}`);
+  }).join("");
+  const cult = conta("culture", "isolada"), cultAnd = conta("culture", "em andamento"), cultF = conta("culture", "falhou");
+  const gen = conta("genome", "montado") + conta("genome", "sequenciado"), genEnv = conta("genome", "enviado");
+  const comAcesso = C.filter(c => String(c.genbank || "").trim()).length;
+  $("#dash-lab").innerHTML = total ? `
+    ${linha("Cultura", total, cult, cultAnd, cultF, `Culturas: ${cult} isoladas, ${cultAnd} em andamento, ${cultF} falharam, de ${total} coletas`)}
+    ${linha("DNA", total, comDNA, 0, conta("dna", "falhou"), `DNA: ${comDNA} extraídos de ${total} coletas`)}
+    ${htmlLoci}
+    ${linha("Genoma", baseLoci, gen, genEnv, 0, `Genoma: ${gen} sequenciados ou montados, ${genEnv} enviados`)}
+    <div class="lab-legenda"><span><i class="ok"></i>concluído</span><span><i class="meio"></i>em andamento / PCR ok</span><span><i class="falha"></i>falhou</span>
+      <span class="lab-gb">GenBank: <b>${comAcesso}</b> ${comAcesso === 1 ? "coleta" : "coletas"} com acesso</span></div>`
+    : `<div class="empty">Nenhuma coleta ainda.</div>`;
 }
 
 /* ================= render ================= */
