@@ -516,6 +516,7 @@
       <button class="btn ghost sm" id="btn-imp-coll">Importar planilha</button>
       <button class="btn ghost sm" id="btn-mat" title="Gera a seção Material examined das coletas visíveis ou selecionadas">Material examinado</button>
       <button class="btn ghost sm" id="btn-csv-coll">Exportar CSV</button>
+      <button class="btn ghost sm" id="btn-dwc" title="CSV no padrão Darwin Core (GBIF, speciesLink) das coletas visíveis ou selecionadas">Darwin Core</button>
       <button class="btn primary sm" id="btn-add-coll">+ Nova coleta</button>
     </div>
     <div class="collbar">
@@ -2606,6 +2607,65 @@ async function copiarMaterial(comItalico) {
   }
 }
 $("#btn-mat").addEventListener("click", abrirMaterial);
+
+/* ================= Darwin Core =================
+ * Padrão do GBIF/speciesLink/IPT: vírgula, UTF-8 sem BOM, nomes de termos oficiais.
+ * País/estado, coletor e herbário vêm da mesma configuração do Material examinado. */
+function exportarDarwinCore() {
+  const regs = matAlvos();
+  if (!regs.length) { toast("Nenhum registro visível — ajuste a busca ou a seleção."); return; }
+  const mine = collSub === "mine";
+  const cfg = matConfig();
+  const [paisBruto = "", estado = ""] = cfg.prefixo.split(",").map(t => t.trim());
+  const pais = paisBruto ? paisBruto.charAt(0).toUpperCase() + paisBruto.slice(1).toLowerCase() : "";
+  const codPais = { brazil: "BR", brasil: "BR", colombia: "CO", ecuador: "EC", peru: "PE", bolivia: "BO", venezuela: "VE" }[normTxt(pais)] || "";
+  const iso = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? v : "");
+  const partes = v => { const m = iso(v).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? [m[1], String(+m[2]), String(+m[3])] : ["", "", ""]; };
+  const associados = r => [
+    r.host ? `host: ${r.host}${r.hostGroup ? ` (${grupoCurto(r.hostGroup)})` : ""}` : "",
+    mine && r.substrate ? `substrate: ${r.substrate}` : "",
+  ].filter(Boolean).join(" | ");
+  const termos = ["occurrenceID", "basisOfRecord", "institutionCode", "catalogNumber", "recordNumber", "recordedBy",
+    "eventDate", "year", "month", "day", "country", "countryCode", "stateProvince", "locality",
+    "decimalLatitude", "decimalLongitude", "geodeticDatum", "coordinateUncertaintyInMeters",
+    "scientificName", "kingdom", "identifiedBy", "dateIdentified", "associatedTaxa", "associatedSequences",
+    "associatedMedia", "preparations", "occurrenceRemarks"];
+  const linhas = regs.map(r => {
+    const data = mine ? r.date : r.collDate;
+    const [ano, mes, dia] = partes(data);
+    const temCoord = r.lat && r.lon && !isNaN(parseFloat(r.lat)) && !isNaN(parseFloat(r.lon));
+    const v = {
+      occurrenceID: mine ? (r.code || r.id) : `${r.collection || "colecao"}:${r.id}`,
+      basisOfRecord: "PreservedSpecimen",
+      institutionCode: mine ? cfg.herbario : (r.collection || ""),
+      catalogNumber: mine ? (r.voucher || "") : "",
+      recordNumber: mine ? (r.code || "") : "",
+      recordedBy: mine ? cfg.coletor : (r.collector || ""),
+      eventDate: iso(data), year: ano, month: mes, day: dia,
+      country: pais, countryCode: codPais, stateProvince: estado,
+      locality: r.locality || "",
+      decimalLatitude: temCoord ? r.lat : "", decimalLongitude: temCoord ? r.lon : "",
+      geodeticDatum: temCoord ? "WGS84" : "",
+      coordinateUncertaintyInMeters: temCoord ? (r.gpsAcc || "") : "",
+      scientificName: r.currentId || "", kingdom: "Fungi",
+      identifiedBy: mine ? "" : (r.determiner || ""), dateIdentified: mine ? "" : (r.detDate || ""),
+      associatedTaxa: associados(r),
+      associatedSequences: mine ? String(r.genbank || "").split(/[,;\s]+/).filter(Boolean).join(" | ") : "",
+      associatedMedia: mine && r.photos ? r.photos : "",
+      preparations: mine ? (r.colltype || "") : "",
+      occurrenceRemarks: String(r.notes || "").replace(/\s*\n\s*/g, " | "),
+    };
+    return termos.map(t => v[t] ?? "");
+  });
+  const q = c => (/[",\n\r]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : String(c));
+  const txt = [termos, ...linhas].map(l => l.map(q).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([txt], { type: "text/csv;charset=utf-8" }));
+  a.download = `darwin-core-${mine ? "coletas" : "amostras"}-${hojeLocal()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(`Darwin Core: ${regs.length} ${regs.length === 1 ? "registro exportado" : "registros exportados"}.`);
+}
+$("#btn-dwc").addEventListener("click", exportarDarwinCore);
 $("#mat-copiar").addEventListener("click", () => copiarMaterial(true));
 $("#mat-copiar-txt").addEventListener("click", () => copiarMaterial(false));
 $("#mat-fechar").addEventListener("click", () => $("#mat-modal").close());
