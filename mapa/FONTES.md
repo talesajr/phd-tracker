@@ -9,5 +9,7 @@
   termos de uso da RAISG. Uso aqui: visualização, com atribuição no mapa.
 - **Rios**: Natural Earth, `ne_10m_rivers_lake_centerlines` (domínio público),
   recortados à caixa do limite RAISG, rios com scalerank ≤ 9, simplificados a 0,02°.
+- **Cidades** (para estimar acesso e nomear lacunas): Natural Earth,
+  `ne_10m_populated_places_simple` (domínio público), recortado à mesma caixa.
 - **Leaflet 1.9.4** (`vendor/leaflet/`): cópia de cdnjs conferida pelo hash SRI
   publicado (`SRI.txt`); imagens conferidas contra o pacote npm. Licença BSD-2.

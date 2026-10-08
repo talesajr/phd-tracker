@@ -387,6 +387,20 @@
   .leaflet-popup-content .pop { font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
   .leaflet-popup-content .pop .btn { margin-right: 4px; }
 
+  /* ---- planejamento de campo ---- */
+  .campo-cob { margin-bottom: 14px; }
+  .link-btn { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+  .checks { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; padding: 4px 2px; }
+  .lacunas { display: flex; flex-direction: column; gap: 8px; }
+  .lacuna-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 10px; align-items: center;
+    border-top: 1px solid var(--grid); padding-top: 8px; }
+  @media (max-width: 620px) { .lacuna-item { grid-template-columns: 28px minmax(0, 1fr); } .lacuna-item .btn { grid-column: 2; justify-self: start; } }
+  .lacuna-num, .lacuna-icone span {
+    display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+    background: #eb6834; color: #fff; font-weight: 700; font-size: 12px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  }
+  .lacuna-icone { background: none; border: 0; }
+
   /* ---- importação ---- */
   dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
   dialog[open].wide { display: flex; flex-direction: column; }
@@ -613,6 +627,7 @@
       <label class="checkline">Célula da grade:
         <select id="mapa-celula" class="stage-select"><option value="0.25">0,25° (~28 km)</option><option value="0.5">0,5° (~55 km)</option><option value="1">1° (~110 km)</option></select></label>
       <label class="checkline"><input type="checkbox" id="mapa-grade-vazia"> Mostrar células vazias</label>
+      <label class="checkline"><input type="checkbox" id="mapa-lacunas" checked> Lacunas prioritárias</label>
     </div>
     <div class="card mapa-card">
       <div id="mapa-area"></div>
@@ -622,9 +637,12 @@
         <span><i style="background:#898781"></i>localidade sem plano</span>
         <span><i style="background:#e87ba4; border-radius:50%"></i>espécime (coordenada própria)</span>
         <span><i style="background:transparent; border:2px solid #fab219"></i>limite da Amazônia (RAISG)</span>
+        <span><i style="background:#eb6834; border-radius:50%"></i>lacuna prioritária</span>
       </div>
     </div>
     <div class="mapa-resumo" id="mapa-resumo"></div>
+    <h3 class="blk" id="lacunas-titulo">Onde ir para preencher lacunas</h3>
+    <div class="card lacunas" id="lacunas-lista"></div>
     <h3 class="blk">Localidades de campo</h3>
     <div class="card"><div class="tblwrap"><table class="tbl" id="sites-tabela"></table></div></div>
   </section>
@@ -636,6 +654,7 @@
       <div class="grow"></div>
       <button class="btn primary sm" id="btn-add-trip">+ Viagem</button>
     </div>
+    <div class="imp-note campo-cob" id="campo-cobertura" hidden></div>
     <div class="grid cols-2" id="trip-cards"></div>
   </section>
 </main>
@@ -1346,6 +1365,13 @@ function openModal({ title, fields, values = {}, onSave, onDelete, onAction, onO
         + (f.status ? ` <span class="acao-status" data-status="${esc(f.key)}"></span>` : "");
       alvo.appendChild(div);
       return;
+    } else if (f.type === "checks") {
+      const marcados = new Set(Array.isArray(val) ? val : []);
+      ctrl = f.options.length
+        ? `<div class="checks">${f.options.map(([v, r, dica]) => `<label class="checkline"><input type="checkbox" name="${f.key}" value="${esc(v)}" data-multi
+            ${marcados.has(v) ? "checked" : ""}> ${esc(r)}${dica ? ` <span class="coords">${esc(dica)}</span>` : ""}</label>`).join("")}</div>`
+          + `<input type="hidden" name="${f.key}" value="" data-multi>`
+        : `<div class="coords">${esc(f.vazio || "Nada para escolher.")}</div>`;
     } else if (f.type === "textarea") {
       ctrl = `<textarea name="${f.key}">${esc(val)}</textarea>`;
     } else {
@@ -1388,7 +1414,10 @@ $("#modal-delete").addEventListener("click", () => {
 });
 $("#modal-form").addEventListener("submit", e => {
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target).entries());
+  const fd = new FormData(e.target);
+  const data = Object.fromEntries(fd.entries());
+  // campos de múltipla escolha viram lista (o hidden vazio garante a chave mesmo sem nada marcado)
+  new Set([...e.target.querySelectorAll("[data-multi]")].map(i => i.name)).forEach(n => { data[n] = fd.getAll(n).filter(Boolean); });
   modalCtx?.onSave(data);
   modal.close(); save(); renderAll();
 });
@@ -1598,6 +1627,9 @@ function tripFields() {
     { key: "location", label: "Local" },
     { key: "start", label: "Início", type: "date", half: true },
     { key: "end", label: "Fim (opcional)", type: "date", half: true },
+    { key: "siteIds", label: "Localidades do mapa (viagens de campo)", type: "checks",
+      options: [...state.sites].sort((a, b) => a.name.localeCompare(b.name)).map(x => [x.id, x.name, x.plan === "planejada" ? "planejada" : ""]),
+      vazio: "Nenhuma localidade cadastrada — crie na aba Mapa (ou use “Planejar viagem aqui” numa lacuna)." },
     { key: "notes", label: "Notas / logística", type: "textarea" },
   ];
 }
@@ -1613,14 +1645,52 @@ function renderTrips() {
         <span class="badge ${cls}"><i></i>${esc(lbl)}</span>
       </div>
       <div class="meta"><b>${esc(t.location)}</b> · ${fmtDate(t.start)}${t.end ? " → " + fmtDate(t.end) : ""}</div>
+      ${isField ? infoCampoViagem(t) : ""}
       ${isField ? `<div class="foot">
         <label class="checkline"><input type="checkbox" data-permit="sisbio" data-trip="${t.id}" ${t.sisbio ? "checked" : ""}> Licença SISBIO/ICMBio</label>
         <label class="checkline"><input type="checkbox" data-permit="sisgen" data-trip="${t.id}" ${t.sisgen ? "checked" : ""}> Cadastro SisGen/MMA</label>
       </div>` : ""}
       ${t.notes ? `<div class="notes">${esc(t.notes)}</div>` : ""}
-      <div class="foot"><button class="btn ghost sm" data-edit-trip="${t.id}">Editar</button></div>
+      <div class="foot"><button class="btn ghost sm" data-edit-trip="${t.id}">Editar</button>
+        ${isField ? `<button class="btn ghost sm" data-mapa-viagem="${t.id}">Ver no mapa</button>` : ""}</div>
     </div>`;
   }).join("") || `<div class="empty">Nenhuma viagem planejada.</div>`;
+  renderCoberturaCampo();
+}
+/* Linha de cada viagem de campo: localidades ligadas, aviso de estação e o que ela acrescenta à cobertura. */
+function infoCampoViagem(t) {
+  const { ids, sugerido } = sitesDaViagem(t);
+  const nomes = ids.map(id => state.sites.find(s => s.id === id)?.name).filter(Boolean);
+  const est = avisoEstacao(t);
+  let contrib = "";
+  if (ids.length && !viagemEncerrada(t)) {
+    const { novas, revisitas } = contribuicaoDaViagem(t);
+    contrib = novas
+      ? `<span class="badge b-good"><i></i>preenche ${novas} ${novas === 1 ? "lacuna" : "lacunas"} da grade</span>`
+      : revisitas ? `<span class="badge"><i></i>revisita área já amostrada</span>` : "";
+  }
+  return `<div class="foot">
+    ${nomes.length ? nomes.map(n => `<span class="badge b-blue"><i></i>${esc(n)}</span>`).join("")
+      + (sugerido ? ` <span class="coords">ligada pelo texto — confirme em Editar</span>` : "")
+      : `<span class="coords">sem localidade no mapa — ligue em Editar para entrar na cobertura</span>`}
+    ${est ? `<span class="badge b-warn"><i></i>${est}</span>` : ""}
+    ${contrib}
+  </div>`;
+}
+/* Resumo no topo de Campo & Viagens. */
+function renderCoberturaCampo() {
+  const el = $("#campo-cobertura");
+  if (!el) return;
+  if (!geoAmazonia) { carregarGeo().then(() => renderTrips()).catch(() => {}); el.hidden = true; return; }
+  const tam = mapaCelula;
+  const amaz = celulasDentro(tam);
+  const esf = [...celulasComEsforco(tam)].filter(k => amaz.has(k));
+  const plan = [...celulasPlanejadas(tam)].filter(k => amaz.has(k) && !esf.includes(k));
+  const pct = n => (100 * n / amaz.size).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  el.hidden = false;
+  el.innerHTML = `<b>Cobertura da Amazônia</b> (células de ${String(tam).replace(".", ",")}°): ${esf.length} com coletas (${pct(esf.length)}%)`
+    + ` · ${plan.length} a mais com viagens planejadas (→ ${pct(esf.length + plan.length)}%).`
+    + ` <button type="button" class="link-btn" data-ir-lacunas>Ver lacunas prioritárias no mapa →</button>`;
 }
 $("#trip-cards").addEventListener("change", e => {
   if (e.target.dataset.permit) {
@@ -1632,15 +1702,16 @@ $("#trip-cards").addEventListener("click", e => {
   const id = e.target.closest("[data-edit-trip]")?.dataset.editTrip; if (!id) return;
   const t = state.trips.find(x => x.id === id);
   openModal({
-    title: "Editar viagem", fields: tripFields(), values: t,
-    onSave: d => Object.assign(t, d),
+    title: "Editar viagem", fields: tripFields(), values: { ...t, siteIds: sitesDaViagem(t).ids },
+    onSave: d => Object.assign(t, d, state.sites.length ? { siteIdsManual: true } : {}),
     onDelete: () => { state.trips = state.trips.filter(x => x.id !== id); },
   });
 });
 $("#btn-add-trip").addEventListener("click", () => {
   openModal({
     title: "Nova viagem", fields: tripFields(), values: { type: "campo", status: "planejada" },
-    onSave: d => state.trips.push({ id: uid(), sisbio: false, sisgen: false, ...d }),
+    // sem nada marcado numa viagem nova, deixa o texto do local sugerir (não marca como manual)
+    onSave: d => state.trips.push({ id: uid(), sisbio: false, sisgen: false, ...d, ...(d.siteIds?.length ? { siteIdsManual: true } : {}) }),
   });
 });
 
@@ -2916,11 +2987,7 @@ function calcularCobertura() {
     const k = chaveCelula(p.lat, p.lon, tam);
     coletadas.set(k, (coletadas.get(k) || 0) + 1);
   });
-  state.sites.forEach(s => {
-    if (s.plan !== "planejada" || !numOk(s.lat) || !numOk(s.lon)) return;
-    const k = chaveCelula(+s.lat, +s.lon, tam);
-    if (!coletadas.has(k)) planejadas.add(k);
-  });
+  celulasPlanejadas(tam).forEach(k => { if (!coletadas.has(k)) planejadas.add(k); });
   const naAmaz = k => amaz.has(k);
   return {
     tam, amaz, coletadas, planejadas,
@@ -3017,12 +3084,13 @@ function desenharDadosMapa() {
   state.sites.forEach(s => {
     if (!numOk(s.lat) || !numOk(s.lon)) return;
     const n = contagem.get(s.id) || 0;
-    const cor = n ? "#0ca30c" : s.plan === "planejada" ? "#3987e5" : "#898781";
+    const prox = proximaViagem(s.id);
+    const cor = n ? "#0ca30c" : sitePlanejado(s) ? "#3987e5" : "#898781";
     camadasDados.addLayer(L.circle([+s.lat, +s.lon], { radius: (+s.radius || SITE_RAIO_PADRAO) * 1000, color: cor, weight: 1.5, fillOpacity: 0.08, interactive: false }));
     const m = L.circleMarker([+s.lat, +s.lon], { radius: 7, color: "#ffffff", weight: 2, fillColor: cor, fillOpacity: 1 });
     m.bindTooltip(`${esc(s.name)} · ${n} ${n === 1 ? "coleta" : "coletas"}`, { direction: "top", offset: [0, -6] });
     m.bindPopup(`<div class="pop"><b>${esc(s.name)}</b><br>${n} ${n === 1 ? "coleta" : "coletas"}${mapaSoHemiptera ? " em Hemiptera" : ""} ·
-      ${s.plan === "planejada" ? "planejada" : n ? "visitada" : "registrada"}<br>
+      ${prox ? `viagem: ${esc(prox.title || "")}${prox.start ? " · " + fmtDate(prox.start) : ""}` : sitePlanejado(s) ? "planejada (sem viagem)" : n || siteVisitadoPorViagem(s) ? "visitada" : "registrada"}<br>
       <button type="button" class="btn ghost sm" data-editar-site="${s.id}">Editar</button>
       <button type="button" class="btn ghost sm" data-coletas-site="${s.id}">Ver coletas</button></div>`);
     camadasDados.addLayer(m);
@@ -3034,8 +3102,35 @@ function desenharDadosMapa() {
     d.bindTooltip(`${esc(c.code || "")} · ${esc(c.currentId || "sem ID")}${c.host ? " · " + esc(c.host) : ""}`, { direction: "top" });
     camadasDados.addLayer(d);
   });
+  lacunasAtuais = rankLacunas(cob.tam);
+  if (mapaMostrarLacunas) lacunasAtuais.forEach((l, i) => {
+    const m = L.marker([l.lat, l.lon], { icon: L.divIcon({ className: "lacuna-icone", html: `<span>${i + 1}</span>`, iconSize: [24, 24] }) });
+    m.bindPopup(`<div class="pop"><b>Lacuna ${i + 1}</b>${descreverLacuna(l)}
+      <button type="button" class="btn primary sm" data-planejar-lacuna="${i}">Planejar viagem aqui</button></div>`);
+    camadasDados.addLayer(m);
+  });
   if (marcadorEu) marcadorEu.addTo(camadasDados);
   renderResumoMapa(cob, contagem);
+  renderLacunas();
+}
+let mapaMostrarLacunas = true;
+const kmTxt = d => (d < 1 ? "menos de 1 km" : `${Math.round(d).toLocaleString("pt-BR")} km`);
+function descreverLacuna(l) {
+  return `<div class="coords" style="white-space:normal">a ${kmTxt(l.dGap)} da área amostrada mais próxima`
+    + (l.rio ? ` · rio ${esc(l.rio)} a ${kmTxt(l.dRio)}` : "") + (l.cidade ? ` · ${esc(l.cidade)} a ${kmTxt(l.dCid)}` : "") + `</div>`;
+}
+function renderLacunas() {
+  const el = $("#lacunas-lista");
+  if (!el) return;
+  el.innerHTML = lacunasAtuais.length
+    ? `<div class="imp-note">Células da Amazônia ainda sem coleta nem viagem planejada, ordenadas pela distância até a área já amostrada
+        mais próxima e pelo acesso (rio grande ou cidade por perto). Uma sugestão por região — ao planejar uma, a lista se recalcula.</div>`
+      + lacunasAtuais.map((l, i) => `<div class="lacuna-item">
+        <span class="lacuna-num">${i + 1}</span>
+        <div class="lacuna-txt"><b>${esc(nomeLacuna(l).replace(/^./, c => c.toUpperCase()))}</b>${descreverLacuna(l)}</div>
+        <button type="button" class="btn ghost sm" data-ver-lacuna="${i}">Ver no mapa</button>
+        <button type="button" class="btn primary sm" data-planejar-lacuna="${i}">Planejar viagem aqui</button></div>`).join("")
+    : `<div class="empty">Sem lacunas para sugerir nesta grade.</div>`;
 }
 
 function contagemPorSite() {
@@ -3063,7 +3158,11 @@ function renderResumoMapa(cob, contagem) {
   $("#sites-tabela").innerHTML = sites.length ? `<tr><th>Localidade</th><th>Situação</th><th class="num">${mapaSoHemiptera ? "Hemiptera" : "Coletas"}</th><th>Ligadas por</th><th class="num">Raio</th><th></th></tr>`
     + sites.map(s => {
       const n = contagem.get(s.id) || 0, m = porModo(s);
-      const sit = n ? `<span class="badge b-good"><i></i>visitada</span>` : s.plan === "planejada" ? `<span class="badge b-blue"><i></i>planejada</span>` : `<span class="badge"><i></i>registrada</span>`;
+      const prox = proximaViagem(s.id);
+      const sit = (n || siteVisitadoPorViagem(s) ? `<span class="badge b-good"><i></i>visitada</span> ` : "")
+        + (prox ? `<span class="badge b-blue"><i></i>viagem ${prox.start ? fmtDate(prox.start) : "sem data"}</span>`
+          : s.plan === "planejada" ? `<span class="badge b-blue"><i></i>planejada (sem viagem)</span>`
+          : n || siteVisitadoPorViagem(s) ? "" : `<span class="badge"><i></i>registrada</span>`);
       const ligadas = [m.coordenada && `${m.coordenada} coordenada`, m.texto && `${m.texto} texto`, m.manual && `${m.manual} manual`].filter(Boolean).join(" · ") || "—";
       const semCoord = !numOk(s.lat) || !numOk(s.lon);
       return `<tr>
@@ -3089,7 +3188,7 @@ function siteFields() {
     { key: "lon", label: "Longitude", half: true, inputmode: "decimal" },
     { key: "gps", label: "📍 Usar o GPS do aparelho", type: "button", status: true },
     { key: "radius", label: "Raio da localidade (km)", half: true, inputmode: "decimal", default: String(SITE_RAIO_PADRAO) },
-    { key: "plan", label: "Planejamento", type: "select", half: true, options: [["", "Sem plano"], ["planejada", "Planejada (ainda vou coletar)"]] },
+    { key: "plan", label: "Planejamento", type: "select", half: true, options: [["", "Pelas viagens de campo"], ["planejada", "Planejada (ideia, ainda sem viagem)"]] },
     { key: "notes", label: "Notas (acesso, logística, permissões…)", type: "textarea" },
   ];
 }
@@ -3167,6 +3266,12 @@ $("#mapa-celula").addEventListener("change", e => {
   desenharDadosMapa();
 });
 $("#mapa-grade-vazia").addEventListener("change", e => { mapaGradeVazia = e.target.checked; desenharDadosMapa(); });
+$("#mapa-lacunas").addEventListener("change", e => { mapaMostrarLacunas = e.target.checked; desenharDadosMapa(); });
+document.addEventListener("click", e => {
+  if (!e.target.closest("[data-ir-lacunas]")) return;
+  document.querySelector('#tabs [data-view="mapa"]').click();
+  setTimeout(() => $("#lacunas-titulo").scrollIntoView({ behavior: "smooth", block: "start" }), 400);
+});
 $("#btn-minha-posicao").addEventListener("click", () => {
   if (!mapa || !navigator.geolocation) return;
   const st = $("#mapa-status");
@@ -3183,6 +3288,193 @@ $("#btn-minha-posicao").addEventListener("click", () => {
   }, err => { st.textContent = err.code === 1 ? "permissão de localização negada" : "sem sinal de GPS"; },
   { enableHighAccuracy: true, timeout: 20000 });
 });
+
+/* ================= planejamento de campo (mapa ↔ Campo & Viagens) =================
+ * Viagens de campo apontam para uma ou mais localidades; localidades com viagem
+ * futura contam como cobertura planejada. As lacunas são ranqueadas pela distância
+ * até a área já amostrada mais próxima, ponderada pelo acesso (rio grande ou cidade).
+ * Esforço de amostragem = coletas de QUALQUER grupo: uma visita amostra todos os
+ * hospedeiros, então ali não falta esforço (o mapa continua exibindo só Hemiptera). */
+const MESES_SECOS = [7, 8, 9, 10]; // fora da estação chuvosa (nov–jun) do projeto
+const viagemEncerrada = t => t.status === "cancelada" || t.status === "concluida";
+
+function sitesDaViagem(t) {
+  const validos = id => state.sites.some(s => s.id === id);
+  // vínculo definido no formulário vale como está (inclusive vazio = nenhuma localidade)
+  if (t.siteIdsManual || (Array.isArray(t.siteIds) && t.siteIds.some(validos))) return { ids: (t.siteIds || []).filter(validos), sugerido: false };
+  const txt = " " + normTxt(`${t.location || ""} ${t.title || ""}`) + " ";
+  return { ids: state.sites.filter(s => siteTermos(s).some(k => txt.includes(" " + k + " "))).map(s => s.id), sugerido: true };
+}
+/* Próxima viagem de campo (não encerrada, sem data ou com data a partir de hoje). */
+function proximaViagem(siteId) {
+  const hoje = hojeLocal();
+  return state.trips
+    .filter(t => t.type === "campo" && !viagemEncerrada(t) && (!t.start || t.start >= hoje) && sitesDaViagem(t).ids.includes(siteId))
+    .sort((a, b) => (a.start || "9999").localeCompare(b.start || "9999"))[0] || null;
+}
+const sitePlanejado = s => s.plan === "planejada" || !!proximaViagem(s.id);
+const siteVisitadoPorViagem = s => state.trips.some(t => t.type === "campo" && t.status === "concluida" && sitesDaViagem(t).ids.includes(s.id));
+
+function avisoEstacao(t) {
+  if (t.type !== "campo" || !t.start) return "";
+  const m1 = +t.start.slice(5, 7), m2 = t.end ? +t.end.slice(5, 7) : m1;
+  const meses = [];
+  for (let m = m1, i = 0; i < 12; m = m % 12 + 1, i++) { meses.push(m); if (m === m2) break; }
+  const secos = meses.filter(m => MESES_SECOS.includes(m)).length;
+  if (!secos) return "";
+  return secos === meses.length ? "fora da estação chuvosa (nov–jun)" : "parte fora da estação chuvosa (nov–jun)";
+}
+
+/* ---- esforço, acesso e lacunas ---- */
+function pontosDeEsforco() {
+  const pts = [];
+  state.collections.forEach(c => { const p = pontoDaColeta(c); if (p) pts.push(p); });
+  return pts;
+}
+function celulasComEsforco(tam) {
+  const k = new Set();
+  pontosDeEsforco().forEach(p => k.add(chaveCelula(p.lat, p.lon, tam)));
+  return k;
+}
+function celulasPlanejadas(tam, excetoViagemId = null) {
+  const k = new Set();
+  state.sites.forEach(s => {
+    if (!numOk(s.lat) || !numOk(s.lon)) return;
+    const viaManual = s.plan === "planejada";
+    const viaViagem = state.trips.some(t => t.id !== excetoViagemId && t.type === "campo" && !viagemEncerrada(t)
+      && (!t.start || t.start >= hojeLocal()) && sitesDaViagem(t).ids.includes(s.id));
+    if (viaManual || viaViagem) k.add(chaveCelula(+s.lat, +s.lon, tam));
+  });
+  return k;
+}
+/* Distâncias em km num plano local (equiretangular): suficiente para ranquear. */
+const kmX = (lon, lat) => lon * 111.32 * Math.cos(lat * Math.PI / 180), kmY = lat => lat * 110.57;
+function distPontoSegKm(lat, lon, a, b) {
+  const px = kmX(lon, lat), py = kmY(lat);
+  const ax = kmX(a[0], lat), ay = kmY(a[1]), bx = kmX(b[0], lat), by = kmY(b[1]);
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+let cacheAcesso = null; // por tamanho de célula: Map chave -> { rio, dRio, cidade, dCid }
+function acessoDasCelulas(tam) {
+  if (cacheAcesso?.tam === tam) return cacheAcesso.mapa;
+  const rios = geoAmazonia.rios.features.filter(f => f.properties.r <= 7).map(f => {
+    let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+    f.geometry.coordinates.forEach(l => l.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }));
+    return { nome: f.properties.n, linhas: f.geometry.coordinates, caixa: [x0, y0, x1, y1] };
+  });
+  const bordas = [];
+  geoAmazonia.limite.features.forEach(f => (f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates).forEach(p => p.forEach(anel => bordas.push(anel))));
+  const mapa = new Map();
+  celulasDentro(tam).forEach(k => {
+    const [i, j] = k.split(",").map(Number);
+    const lat = (i + 0.5) * tam, lon = (j + 0.5) * tam;
+    let dRio = Infinity, rio = "";
+    rios.forEach(r => {
+      // pula rios cuja caixa já está mais longe que o melhor encontrado
+      const cx = Math.max(r.caixa[0] - lon, 0, lon - r.caixa[2]), cy = Math.max(r.caixa[1] - lat, 0, lat - r.caixa[3]);
+      if (Math.hypot(cx * 111 * Math.cos(lat * Math.PI / 180), cy * 111) > dRio) return;
+      r.linhas.forEach(l => { for (let s = 1; s < l.length; s++) { const d = distPontoSegKm(lat, lon, l[s - 1], l[s]); if (d < dRio) { dRio = d; rio = r.nome; } } });
+    });
+    let dBorda = Infinity;
+    bordas.forEach(l => { for (let s = 1; s < l.length; s++) { const d = distPontoSegKm(lat, lon, l[s - 1], l[s]); if (d < dBorda) dBorda = d; } });
+    let dCid = Infinity, cidade = "";
+    geoAmazonia.cidades.forEach(([nome, la, lo]) => { const d = Math.hypot(kmX(lo, lat) - kmX(lon, lat), kmY(la) - kmY(lat)); if (d < dCid) { dCid = d; cidade = nome; } });
+    mapa.set(k, { rio, dRio, cidade, dCid, dBorda });
+  });
+  cacheAcesso = { tam, mapa };
+  return mapa;
+}
+function rankLacunas(tam, n = 10) {
+  if (!geoAmazonia) return [];
+  const amaz = celulasDentro(tam);
+  const cobertas = new Set([...celulasComEsforco(tam), ...celulasPlanejadas(tam)]);
+  let refs = [...cobertas].map(k => { const [i, j] = k.split(",").map(Number); return [(i + 0.5) * tam, (j + 0.5) * tam]; });
+  if (!refs.length) { const mao = geoAmazonia.cidades.find(c => c[0] === "Manaus"); refs = [[mao ? mao[1] : -3.1, mao ? mao[2] : -60.02]]; }
+  const acesso = acessoDasCelulas(tam);
+  const cand = [];
+  amaz.forEach(k => {
+    if (cobertas.has(k)) return;
+    const [i, j] = k.split(",").map(Number);
+    const lat = (i + 0.5) * tam, lon = (j + 0.5) * tam;
+    let dGap = Infinity;
+    refs.forEach(([la, lo]) => { const d = Math.hypot(kmX(lo, lat) - kmX(lon, lat), kmY(la) - kmY(lat)); if (d < dGap) dGap = d; });
+    const a = acesso.get(k);
+    const fatorAcesso = Math.max(Math.exp(-a.dRio / 25), Math.exp(-a.dCid / 50));
+    // lacuna com teto: além de 500 km tudo conta igual, senão as bordas mais distantes do limite
+    // (Andes, transição com o Cerrado) sempre venceriam; células coladas na borda perdem peso
+    const fatorLacuna = Math.min(dGap, 500) / 500;
+    const fatorInterior = Math.min(1, a.dBorda / 120);
+    const nota = fatorLacuna * (0.3 + 0.7 * fatorAcesso) * (0.35 + 0.65 * fatorInterior) + dGap / 1e6; // desempate: mais longe
+    cand.push({ k, lat, lon, dGap, ...a, fatorAcesso, nota });
+  });
+  cand.sort((x, y) => y.nota - x.nota);
+  // espalha as sugestões: nada a menos de 250 km de outra já escolhida
+  const escolhidas = [];
+  for (const c of cand) {
+    if (escolhidas.every(e => Math.hypot(kmX(e.lon, c.lat) - kmX(c.lon, c.lat), kmY(e.lat) - kmY(c.lat)) > 250)) escolhidas.push(c);
+    if (escolhidas.length >= n) break;
+  }
+  return escolhidas;
+}
+/* Quantas células novas (nem amostradas nem planejadas por outra viagem) esta viagem cobre. */
+function contribuicaoDaViagem(t) {
+  const tam = mapaCelula;
+  const esforco = celulasComEsforco(tam), outras = celulasPlanejadas(tam, t.id);
+  const amaz = geoAmazonia ? celulasDentro(tam) : null;
+  let novas = 0, revisitas = 0;
+  new Set(sitesDaViagem(t).ids.map(id => state.sites.find(s => s.id === id)).filter(s => s && numOk(s.lat) && numOk(s.lon))
+    .map(s => chaveCelula(+s.lat, +s.lon, tam))).forEach(k => {
+      if (amaz && !amaz.has(k)) return;
+      if (esforco.has(k) || outras.has(k)) revisitas++; else novas++;
+    });
+  return { novas, revisitas };
+}
+
+/* ---- ações: planejar a partir de uma lacuna, ver viagem no mapa ---- */
+function planejarNaLacuna(lac) {
+  const perto = nomeLacuna(lac);
+  openModal({
+    title: "Planejar viagem para a lacuna",
+    fields: tripFields({ extra: true }),
+    values: { type: "campo", status: "ideia", title: `Expedição — lacuna ${perto}`.trim(),
+      location: [lac.cidade, lac.rio ? `rio ${lac.rio}` : ""].filter(Boolean).join(", "),
+      notes: `Lacuna de amostragem: a ${kmTxt(lac.dGap)} da área amostrada mais próxima`
+        + (lac.rio ? `; rio ${lac.rio} a ${kmTxt(lac.dRio)}` : "") + (lac.cidade ? `; ${lac.cidade} a ${kmTxt(lac.dCid)}.` : "."),
+      siteIds: [] },
+    onSave: d => {
+      const site = { id: uid(), name: `Lacuna — ${perto}`,
+        aliases: "", lat: lac.lat.toFixed(4), lon: lac.lon.toFixed(4), radius: String(Math.round(mapaCelula * 55 / 2)), plan: "" };
+      state.sites.push(site);
+      state.trips.push({ id: uid(), sisbio: false, sisgen: false, ...d, siteIds: [...(d.siteIds || []), site.id] });
+      toast(`Viagem e localidade “${site.name}” criadas em Campo & Viagens.`);
+    },
+  });
+}
+function verViagemNoMapa(tripId) {
+  const t = state.trips.find(x => x.id === tripId);
+  const sites = sitesDaViagem(t).ids.map(id => state.sites.find(s => s.id === id)).filter(s => s && numOk(s.lat) && numOk(s.lon));
+  document.querySelector('#tabs [data-view="mapa"]').click();
+  const ir = () => {
+    if (!mapa) return setTimeout(ir, 150);
+    if (sites.length === 1) mapa.setView([+sites[0].lat, +sites[0].lon], 9);
+    else if (sites.length) mapa.fitBounds(sites.map(s => [+s.lat, +s.lon]), { padding: [60, 60], maxZoom: 9 });
+  };
+  setTimeout(ir, 200);
+}
+document.addEventListener("click", e => {
+  const lac = e.target.closest("[data-planejar-lacuna]");
+  if (lac) { mapa?.closePopup(); planejarNaLacuna(lacunasAtuais[+lac.dataset.planejarLacuna]); return; }
+  const verLac = e.target.closest("[data-ver-lacuna]");
+  if (verLac && mapa) { const l = lacunasAtuais[+verLac.dataset.verLacuna]; mapa.setView([l.lat, l.lon], 8); $("#mapa-area").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  const vm = e.target.closest("[data-mapa-viagem]");
+  if (vm) verViagemNoMapa(vm.dataset.mapaViagem);
+});
+let lacunasAtuais = [];
+/* Nome de uma lacuna: a cidade só se estiver perto; senão o rio; senão a coordenada. */
+const nomeLacuna = l => (l.cidade && l.dCid <= 80 ? `perto de ${l.cidade}`
+  : l.rio && l.dRio <= 40 ? `rio ${l.rio}` : `${l.lat.toFixed(2)}, ${l.lon.toFixed(2)}`);
 
 $("#coll-filtro").addEventListener("click", e => {
   if (e.target.closest("[data-limpar-filtro]")) { collFiltro = null; renderColl(); }
