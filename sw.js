@@ -1,6 +1,6 @@
 /* Service worker do PhD Tracker: deixa o app abrir sem internet (campo).
  * Só cuida dos arquivos do próprio site — chamadas ao Supabase passam direto. */
-const CACHE = "phd-tracker-v4";
+const CACHE = "phd-tracker-v5";
 const SHELL = [
   "./",
   "./index.html",

@@ -636,7 +636,7 @@
         <span><i style="background:#3987e5"></i>planejada</span>
         <span><i style="background:#898781"></i>localidade sem plano</span>
         <span><i style="background:#e87ba4; border-radius:50%"></i>espécime (coordenada própria)</span>
-        <span><i style="background:transparent; border:2px solid #fab219"></i>bioma Amazônia (RAISG, biogeográfico)</span>
+        <span><i style="background:transparent; border:2px solid #fab219"></i>bioma Amazônia (IBGE + ecorregiões)</span>
         <span><i style="background:#eb6834; border-radius:50%"></i>lacuna prioritária</span>
       </div>
     </div>
@@ -2889,7 +2889,7 @@ $("#qual-corpo").addEventListener("click", e => {
 /* ================= mapa e localidades de campo =================
  * Localidades (Ducke, ZF-2…) com coordenada e raio; as coletas se ligam a elas por
  * escolha manual, pela coordenada (dentro do raio) ou pelo texto da localidade.
- * O mapa mostra o bioma Amazônia (limite biogeográfico da RAISG), rios, localidades, coletas e uma grade
+ * O mapa mostra o bioma Amazônia (IBGE no Brasil + ecorregiões de floresta úmida fora), rios, localidades, coletas e uma grade
  * de cobertura. Por padrão só espécimes em Hemiptera (foco do projeto). */
 const SITE_RAIO_PADRAO = 5; // km
 const ehHemiptera = c => String(c.hostGroup || "").startsWith("Hemiptera");
@@ -3031,7 +3031,7 @@ async function iniciarMapa() {
     });
     document.querySelector("#mapa-area").classList.toggle("fundo-claro", fundo !== "satelite");
     L.control.scale({ imperial: false, position: "bottomleft" }).addTo(mapa);
-    mapa.attributionControl.addAttribution("Limites: RAISG · Rios: Natural Earth");
+    mapa.attributionControl.addAttribution("Bioma: IBGE, RESOLVE 2017 · Limites: RAISG · Rios: Natural Earth");
 
     // camadas fixas: estados, países, rios, limite RAISG
     const g = geoAmazonia;
