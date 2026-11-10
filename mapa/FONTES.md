@@ -3,7 +3,7 @@
 - **Limite da Amazônia, países e estados**: RAISG — Rede Amazônica de Informação
   Socioambiental Georreferenciada (raisg.org), serviço público
   `geo.socioambiental.org/raisg/rest/services/raisg/rg_srv_mapas_limites/MapServer`
-  (camadas 7 "límite utilizado por RAISG", 4 "Internacional" e 5 "Departamental"),
+  (camadas 9 "Amazonía Biogeográfica" — o bioma, ~7,0 milhões de km²; no Brasil corresponde ao Bioma Amazônia do IBGE —, 4 "Internacional" e 5 "Departamental"),
   simplificadas (tolerância 0,02°–0,06°) e com coordenadas arredondadas a 0,01°.
   A propriedade intelectual dos dados é das fontes originais de cada país; ver os
   termos de uso da RAISG. Uso aqui: visualização, com atribuição no mapa.

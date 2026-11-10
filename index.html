@@ -636,7 +636,7 @@
         <span><i style="background:#3987e5"></i>planejada</span>
         <span><i style="background:#898781"></i>localidade sem plano</span>
         <span><i style="background:#e87ba4; border-radius:50%"></i>espécime (coordenada própria)</span>
-        <span><i style="background:transparent; border:2px solid #fab219"></i>limite da Amazônia (RAISG)</span>
+        <span><i style="background:transparent; border:2px solid #fab219"></i>bioma Amazônia (RAISG, biogeográfico)</span>
         <span><i style="background:#eb6834; border-radius:50%"></i>lacuna prioritária</span>
       </div>
     </div>
@@ -2889,7 +2889,7 @@ $("#qual-corpo").addEventListener("click", e => {
 /* ================= mapa e localidades de campo =================
  * Localidades (Ducke, ZF-2…) com coordenada e raio; as coletas se ligam a elas por
  * escolha manual, pela coordenada (dentro do raio) ou pelo texto da localidade.
- * O mapa mostra o limite da Amazônia (RAISG), rios, localidades, coletas e uma grade
+ * O mapa mostra o bioma Amazônia (limite biogeográfico da RAISG), rios, localidades, coletas e uma grade
  * de cobertura. Por padrão só espécimes em Hemiptera (foco do projeto). */
 const SITE_RAIO_PADRAO = 5; // km
 const ehHemiptera = c => String(c.hostGroup || "").startsWith("Hemiptera");
@@ -3056,11 +3056,18 @@ async function iniciarMapa() {
       editarSite(null, { lat, lon });
     });
   }
-  const primeira = !mapa._enquadrado;
-  setTimeout(() => {
+  // enquadra o bioma só quando o mapa já tem tamanho real (com tamanho zero o
+  // fitBounds cai no zoom máximo); tenta de novo até o layout estabilizar
+  const enquadrar = (tentativa = 0) => {
     mapa.invalidateSize();
-    if (primeira) { mapa.fitBounds([[-20.5, -79.5], [10.5, -43.5]], { padding: [10, 10] }); mapa._enquadrado = true; }
-  }, 80);
+    const t = mapa.getSize();
+    if ((t.x < 50 || t.y < 50) && tentativa < 30) return setTimeout(() => enquadrar(tentativa + 1), 100);
+    if (!mapa._enquadrado || mapa.getZoom() > 12) {
+      mapa.fitBounds([[-18.5, -79.5], [9.5, -44.5]], { padding: [10, 10], maxZoom: 6 });
+      mapa._enquadrado = true;
+    }
+  };
+  setTimeout(enquadrar, 80);
   desenharDadosMapa();
 }
 
