@@ -777,6 +777,8 @@
       <div class="field"><label>Estado (se a coleta não tiver)</label><input name="estado"></div>
       <div class="field"><label>Hospedeiro e substrato</label><select name="ecologia"><option value="sim">Incluir</option><option value="nao">Omitir</option></select></div>
       <div class="field"><label>Notas</label><select name="notas"><option value="sim">Incluir</option><option value="nao">Omitir</option></select></div>
+      <div class="field"><label>Arranjo na folha A4</label><select name="folha">
+        <option value="6">6 por folha (4 em pé + 2 deitadas)</option><option value="4">4 por folha (todas em pé)</option></select></div>
     </form>
     <div class="imp-note" id="etq-resumo"></div>
     <ul class="etq-avisos" id="etq-avisos" hidden></ul>
@@ -2825,9 +2827,9 @@ $("#btn-mat").addEventListener("click", abrirMaterial);
 /* ================= etiquetas de herbário =================
  * Etiquetas de 12 × 7 cm no modelo das etiquetas do INPA, 4 por folha A4 (retrato),
  * com marcas de corte. PDF gerado no próprio aparelho com jsPDF (vendor/jspdf). */
-const ETQ_W = 120, ETQ_H = 70, ETQ_POR_PAGINA = 4;
+const ETQ_W = 120, ETQ_H = 70;
 const ETQ_PADRAO = { titulo: "TAJ Collection", subtitulo: "Manaus-Amazonas-Brasil", coletor: "Alves Júnior, T.",
-  pais: "Brasil", estado: "Amazonas", ecologia: "sim", notas: "sim" };
+  pais: "Brasil", estado: "Amazonas", ecologia: "sim", notas: "sim", folha: "6" };
 const etqConfig = () => { try { return { ...ETQ_PADRAO, ...JSON.parse(localStorage.getItem("phd-etq-config") || "{}") }; } catch { return { ...ETQ_PADRAO }; } };
 const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
@@ -2934,34 +2936,50 @@ function quebrarSegmentos(doc, segs, largura, tam) {
   });
   return linhas;
 }
-function desenharSegmentos(doc, linha, x, y, tam) {
-  linha.forEach(s => { fonte(doc, s, tam); doc.text(s.t, x, y); x += doc.getTextWidth(s.t); });
+/* "Caneta" de uma etiqueta: desenha em coordenadas locais (u ao longo dos 12 cm, v ao longo dos 7 cm)
+ * e converte para a folha — em pé ou deitada (girada 90°, lendo de baixo para cima). */
+function caneta(doc, x0, y0, deitada) {
+  const P = deitada ? (u, v) => [x0 + v, y0 + ETQ_W - u] : (u, v) => [x0 + u, y0 + v];
+  const ang = deitada ? 90 : 0;
+  return {
+    text(t, u, v, o = {}) {
+      const w = doc.getTextWidth(t);
+      const u0 = o.align === "right" ? u - w : o.align === "center" ? u - w / 2 : u;
+      const [X, Y] = P(u0, v);
+      doc.text(t, X, Y, ang ? { angle: ang } : undefined);
+    },
+    line(u1, v1, u2, v2) { const [a, b] = P(u1, v1), [c, d] = P(u2, v2); doc.line(a, b, c, d); },
+  };
+}
+function desenharSegmentos(doc, pen, linha, u, v, tam) {
+  linha.forEach(s => { fonte(doc, s, tam); pen.text(s.t, u, v); u += doc.getTextWidth(s.t); });
 }
 
-function desenharEtiqueta(doc, e, cfg, x0, y0) {
+function desenharEtiqueta(doc, e, cfg, x0, y0, deitada = false) {
+  const pen = caneta(doc, x0, y0, deitada);
   const M = 6;                     // margem interna (mm)
   const L = ETQ_W - 2 * M;         // largura útil
   const pt = 0.3528;               // 1 pt em mm
   doc.setDrawColor(0); doc.setTextColor(0);
   doc.setLineWidth(0.35);
-  doc.line(x0 + M, y0 + 4, x0 + ETQ_W - M, y0 + 4);
-  doc.line(x0 + M, y0 + ETQ_H - 4, x0 + ETQ_W - M, y0 + ETQ_H - 4);
+  pen.line(M, 4, ETQ_W - M, 4);
+  pen.line(M, ETQ_H - 4, ETQ_W - M, ETQ_H - 4);
   // cabeçalho centralizado
   doc.setFont("helvetica", "bold"); doc.setFontSize(15);
-  doc.text(cfg.titulo, x0 + ETQ_W / 2, y0 + 10.5, { align: "center" });
+  pen.text(cfg.titulo, ETQ_W / 2, 10.5, { align: "center" });
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
-  if (cfg.subtitulo) doc.text(cfg.subtitulo, x0 + ETQ_W / 2, y0 + 14.5, { align: "center" });
+  if (cfg.subtitulo) pen.text(cfg.subtitulo, ETQ_W / 2, 14.5, { align: "center" });
 
   // família · número
-  const yFam = y0 + 20.5;
+  const vFam = 20.5;
   doc.setFont("times", "bold"); doc.setFontSize(11);
-  if (e.familia) doc.text(e.familia, x0 + M, yFam);
-  if (e.numero) doc.text(e.numero, x0 + ETQ_W - M, yFam, { align: "right" });
+  if (e.familia) pen.text(e.familia, M, vFam);
+  if (e.numero) pen.text(e.numero, ETQ_W - M, vFam, { align: "right" });
 
   // rodapé: coletor · data e coletores adicionais
-  const yRodape = y0 + ETQ_H - 6.2 - (e.adicionais ? 4 : 0);
+  const vRodape = ETQ_H - 6.2 - (e.adicionais ? 4 : 0);
   // corpo: encolhe a fonte até caber entre a família e o rodapé
-  const topo = yFam + 1.5, base = yRodape - 4.2;
+  const topo = vFam + 1.5, base = vRodape - 4.2;
   let tam = 10, linhas, alt;
   for (; tam >= 6.5; tam -= 0.25) {
     linhas = e.corpo.flatMap(l => quebrarSegmentos(doc, l, L, tam));
@@ -2969,38 +2987,56 @@ function desenharEtiqueta(doc, e, cfg, x0, y0) {
     if (alt <= base - topo) break;
   }
   const passo = tam * pt * 1.32;
-  let y = topo + passo * 0.9;
-  linhas.forEach(l => { if (y <= base + 0.5) desenharSegmentos(doc, l, x0 + M, y, tam); y += passo; });
+  let v = topo + passo * 0.9;
+  linhas.forEach(l => { if (v <= base + 0.5) desenharSegmentos(doc, pen, l, M, v, tam); v += passo; });
 
   doc.setFont("times", "bold"); doc.setFontSize(10.5);
-  if (e.coletor) doc.text(e.coletor, x0 + M, yRodape);
-  if (e.data) doc.text(e.data, x0 + ETQ_W - M, yRodape, { align: "right" });
+  if (e.coletor) pen.text(e.coletor, M, vRodape);
+  if (e.data) pen.text(e.data, ETQ_W - M, vRodape, { align: "right" });
   if (e.adicionais) {
     doc.setFont("times", "normal"); doc.setFontSize(9);
     const add = doc.splitTextToSize("& " + e.adicionais.replace(/^&\s*/, ""), L)[0];
-    doc.text(add, x0 + M, yRodape + 4);
+    pen.text(add, M, vRodape + 4);
   }
 }
-function marcasDeCorte(doc, x, y) {
+function marcasDeCorte(doc, x, y, w, h) {
   doc.setDrawColor(150); doc.setLineWidth(0.15);
-  const c = 3, d = 1.5; // comprimento e afastamento das marcas
-  [[x, y], [x + ETQ_W, y], [x, y + ETQ_H], [x + ETQ_W, y + ETQ_H]].forEach(([cx, cy]) => {
-    const sx = cx === x ? -1 : 1;
-    doc.line(cx + sx * d, cy, cx + sx * (d + c), cy);
+  const c = 2.5, d = 1; // comprimento e afastamento das marcas
+  [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].forEach(([cx, cy]) => {
+    const sx = cx === x ? -1 : 1, sy = cy === y ? -1 : 1;
+    doc.line(cx + sx * d, cy, cx + sx * (d + c), cy);   // horizontal
+    doc.line(cx, cy + sy * d, cx, cy + sy * (d + c));   // vertical
   });
   doc.setDrawColor(0);
 }
+/* Posições numa folha A4 retrato (210 × 297 mm).
+ * "6": 4 em pé numa coluna + 2 deitadas na faixa lateral (aproveita ~81% da folha).
+ * "4": 4 em pé, todas na mesma direção (~57%). */
+function posicoesFolha(modo) {
+  if (modo === "4") {
+    const x = (210 - ETQ_W) / 2, y0 = (297 - 4 * ETQ_H) / 2;
+    return [0, 1, 2, 3].map(k => ({ x, y: y0 + k * ETQ_H, deitada: false }));
+  }
+  const folga = (210 - ETQ_W - ETQ_H) / 3;           // margem, vão, margem
+  const xA = folga, xB = folga + ETQ_W + folga;
+  const yA = (297 - 4 * ETQ_H) / 2, yB = (297 - 2 * ETQ_W) / 2;
+  return [
+    ...[0, 1, 2, 3].map(k => ({ x: xA, y: yA + k * ETQ_H, deitada: false })),
+    ...[0, 1].map(k => ({ x: xB, y: yB + k * ETQ_W, deitada: true })),
+  ];
+}
+const porFolha = cfg => posicoesFolha(cfg.folha).length;
 function gerarPDFEtiquetas(regs, cfg) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   doc.setProperties({ title: `Etiquetas ${cfg.titulo}`, creator: "PhD Tracker" });
-  const x = (210 - ETQ_W) / 2, y0 = (297 - ETQ_POR_PAGINA * ETQ_H) / 2;
+  const pos = posicoesFolha(cfg.folha);
   regs.forEach((c, i) => {
-    const pos = i % ETQ_POR_PAGINA;
-    if (i && !pos) doc.addPage();
-    const y = y0 + pos * ETQ_H;
-    marcasDeCorte(doc, x, y);
-    desenharEtiqueta(doc, montarEtiqueta(c, cfg), cfg, x, y);
+    const k = i % pos.length;
+    if (i && !k) doc.addPage();
+    const { x, y, deitada } = pos[k];
+    marcasDeCorte(doc, x, y, deitada ? ETQ_H : ETQ_W, deitada ? ETQ_W : ETQ_H);
+    desenharEtiqueta(doc, montarEtiqueta(c, cfg), cfg, x, y, deitada);
   });
   return doc;
 }
@@ -3046,8 +3082,8 @@ function lerCfgEtq() {
 function atualizarEtiquetas() {
   const cfg = lerCfgEtq();
   const comAviso = etqRegs.map(c => ({ c, a: montarEtiqueta(c, cfg).avisos })).filter(x => x.a.length);
-  const paginas = Math.ceil(etqRegs.length / ETQ_POR_PAGINA);
-  $("#etq-resumo").innerHTML = `${etqRegs.length} ${etqRegs.length === 1 ? "etiqueta" : "etiquetas"} em ${paginas} ${paginas === 1 ? "folha" : "folhas"} A4 (4 por folha)`
+  const n = porFolha(cfg), paginas = Math.ceil(etqRegs.length / n);
+  $("#etq-resumo").innerHTML = `${etqRegs.length} ${etqRegs.length === 1 ? "etiqueta" : "etiquetas"} em ${paginas} ${paginas === 1 ? "folha" : "folhas"} A4 (${n} por folha)`
     + (comAviso.length ? ` · <b>${comAviso.length}</b> com dados faltando — dá para imprimir assim, ou completar antes:` : " · nenhuma com dados faltando.");
   $("#etq-avisos").innerHTML = comAviso.slice(0, 60).map(({ c, a }) =>
     `<li><button type="button" class="link-btn" data-etq-abrir="${c.id}">${esc(c.code || "(sem código)")}</button> — ${esc(a.join(", "))}</li>`).join("")
@@ -3057,7 +3093,7 @@ function atualizarEtiquetas() {
   $("#etq-gbif").hidden = !sug;
   $("#etq-gbif").textContent = `Completar família e autor pelo GBIF (${sug})`;
   if (etqURL) URL.revokeObjectURL(etqURL);
-  const doc = gerarPDFEtiquetas(etqRegs.slice(0, ETQ_POR_PAGINA), cfg);
+  const doc = gerarPDFEtiquetas(etqRegs.slice(0, porFolha(cfg)), cfg);
   etqURL = URL.createObjectURL(doc.output("blob"));
   $("#etq-previa").src = etqURL + "#toolbar=0&navpanes=0&view=FitH";
 }
