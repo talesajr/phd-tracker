@@ -401,6 +401,12 @@
   }
   .lacuna-icone { background: none; border: 0; }
 
+  /* ---- etiquetas ---- */
+  .etq-avisos { margin: 0; padding: 8px 12px 8px 28px; max-height: 18vh; overflow-y: auto; font-size: 12.5px; color: var(--ink-2);
+    background: color-mix(in srgb, var(--warning) 10%, var(--surface-1)); border: 1px solid var(--border); border-radius: 8px; }
+  .etq-avisos li { margin: 2px 0; }
+  .etq-previa { width: 100%; height: 52vh; border: 1px solid var(--grid); border-radius: 8px; background: #fff; }
+
   /* ---- importação ---- */
   dialog.wide { width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); }
   dialog[open].wide { display: flex; flex-direction: column; }
@@ -562,6 +568,7 @@
       <div class="grow"></div>
       <button class="btn ghost sm" id="btn-imp-coll">Importar planilha</button>
       <button class="btn ghost sm" id="btn-mat" title="Gera a seção Material examined das coletas visíveis ou selecionadas">Material examinado</button>
+      <button class="btn ghost sm" id="btn-etq" title="Etiquetas de herbário (12 × 7 cm) em PDF A4 das coletas visíveis ou selecionadas">Etiquetas</button>
       <button class="btn ghost sm" id="btn-csv-coll">Exportar CSV</button>
       <button class="btn ghost sm" id="btn-dwc" title="CSV no padrão Darwin Core (GBIF, speciesLink) das coletas visíveis ou selecionadas">Darwin Core</button>
       <button class="btn primary sm" id="btn-add-coll">+ Nova coleta</button>
@@ -757,6 +764,30 @@
     <div class="qual-lista" id="qual-corpo"></div>
   </div>
   <div class="modal-foot"><button type="button" class="btn ghost" id="qual-fechar">Fechar</button></div>
+</dialog>
+
+<dialog id="etq-modal" class="wide">
+  <div class="modal-head" id="etq-titulo">Etiquetas de herbário</div>
+  <div class="modal-body">
+    <form id="etq-form" class="mat-opcoes" onsubmit="return false">
+      <div class="field"><label>Título (centralizado)</label><input name="titulo"></div>
+      <div class="field"><label>Subtítulo</label><input name="subtitulo"></div>
+      <div class="field"><label>Coletor (antes do número)</label><input name="coletor"></div>
+      <div class="field"><label>País (se a coleta não tiver)</label><input name="pais"></div>
+      <div class="field"><label>Estado (se a coleta não tiver)</label><input name="estado"></div>
+      <div class="field"><label>Hospedeiro e substrato</label><select name="ecologia"><option value="sim">Incluir</option><option value="nao">Omitir</option></select></div>
+      <div class="field"><label>Notas</label><select name="notas"><option value="sim">Incluir</option><option value="nao">Omitir</option></select></div>
+    </form>
+    <div class="imp-note" id="etq-resumo"></div>
+    <ul class="etq-avisos" id="etq-avisos" hidden></ul>
+    <div><button type="button" class="btn ghost sm" id="etq-gbif" hidden>Completar família e autor pelo GBIF</button></div>
+    <label style="display:block; font-size:12px; font-weight:650; color:var(--ink-2); margin:2px 0 6px;">Prévia da primeira folha</label>
+    <iframe id="etq-previa" class="etq-previa" title="Prévia das etiquetas"></iframe>
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn ghost" id="etq-fechar">Fechar</button>
+    <button type="button" class="btn primary" id="etq-baixar">Baixar PDF</button>
+  </div>
 </dialog>
 
 <dialog id="modal">
@@ -1756,6 +1787,14 @@ function collFields({ campo = false } = {}) {
     { key: "photos", label: "Pasta de fotos (link do Google Drive — opcional)", more: depois },
     { key: "drive", label: "🔍 Abrir as fotos desta coleta no Drive", type: "button", more: depois },
     { key: "notes", label: "Notas", type: "textarea" },
+    { key: "family", label: "Família (ex.: Ophiocordycipitaceae)", half: true, more: true },
+    { key: "author", label: "Autor do nome (ex.: (Mains) G.H. Sung et al.)", half: true, more: true },
+    { key: "determiner", label: "Determinador (ex.: Alves Júnior, T.)", half: true, more: true },
+    { key: "detDate", label: "Data de determinação", type: "date", half: true, more: true },
+    { key: "country", label: "País", half: true, more: true, default: "Brasil" },
+    { key: "stateProv", label: "Estado", half: true, more: true, default: "Amazonas" },
+    { key: "municipality", label: "Município", half: true, more: true },
+    { key: "addColl", label: "Coletores adicionais (ex.: Araújo, J.P.M.; Zartman, C.E.)", half: true, more: true },
     { key: "culture", label: "Cultura", type: "select", half: true, more: true, options: [["", "—"], ...LAB_CULTURA.map(v => [v, v])] },
     { key: "dna", label: "DNA", type: "select", half: true, more: true, options: [["", "—"], ...LAB_DNA.map(v => [v, v])] },
     ...LOCI.map(([k, rot]) => ({ key: k, label: rot, type: "select", half: true, more: true, options: [["", "—"], ...LAB_LOCUS.map(v => [v, v])] })),
@@ -1903,6 +1942,14 @@ const GRID_COLS = {
     ...LOCI.map(([k, rot]) => ({ key: k, label: rot, w: 108, type: "txt", norm: "lista", opcoes: LAB_LOCUS, list: "dl-locus", lab: true })),
     { key: "genome", label: "Genoma", w: 115, type: "txt", norm: "lista", opcoes: LAB_GENOMA, list: "dl-genoma", lab: true },
     { key: "genbank", label: "GenBank (acessos)", w: 210, type: "txt", lab: true },
+    { key: "family", label: "Família", w: 170, type: "txt", etq: true },
+    { key: "author", label: "Autor do nome", w: 190, type: "txt", etq: true },
+    { key: "determiner", label: "Determinador", w: 160, type: "txt", etq: true },
+    { key: "detDate", label: "Data de det.", w: 108, type: "date", norm: "date", etq: true },
+    { key: "country", label: "País", w: 100, type: "txt", etq: true },
+    { key: "stateProv", label: "Estado", w: 110, type: "txt", etq: true },
+    { key: "municipality", label: "Município", w: 150, type: "txt", etq: true },
+    { key: "addColl", label: "Coletores adicionais", w: 230, type: "txt", etq: true },
   ],
   ext: [
     { key: "collection", label: "Coleção", w: 100, type: "nat", stick: true },
@@ -1976,7 +2023,8 @@ function gridColsVisiveis() {
   const todas = GRID_COLS[collSub];
   if (collSub !== "mine" || gridGrupo === "todas") return todas;
   if (gridGrupo === "lab") return todas.filter(c => ["code", "currentId", "host"].includes(c.key) || c.lab);
-  return todas.filter(c => !c.lab);
+  if (gridGrupo === "etq") return todas.filter(c => ["code", "currentId", "date", "locality", "lat", "lon"].includes(c.key) || c.etq);
+  return todas.filter(c => !c.lab && !c.etq);
 }
 
 const gridLista = () => (collSub === "mine" ? "collections" : "samples");
@@ -2037,7 +2085,7 @@ function renderGrid(rows, cols, sort, cap) {
     + dl("dl-sites", state.sites.map(x => x.name)) + dl("dl-cultura", LAB_CULTURA) + dl("dl-dna", LAB_DNA) + dl("dl-locus", LAB_LOCUS) + dl("dl-genoma", LAB_GENOMA)
     + (collSub === "mine" ? `<div class="grid-bar"><span class="gsel-n">Colunas:</span>
         <div class="seg seg-sm" id="grid-grupos">
-          ${[["coleta", "Coleta"], ["lab", "Laboratório"], ["todas", "Todas"]].map(([v, r]) =>
+          ${[["coleta", "Coleta"], ["lab", "Laboratório"], ["etq", "Etiqueta"], ["todas", "Todas"]].map(([v, r]) =>
             `<button type="button" data-ggrupo="${v}" class="${gridGrupo === v ? "active" : ""}">${r}</button>`).join("")}
         </div></div>` : "")
     + `<div class="grid-bar">
@@ -2617,8 +2665,8 @@ $("#btn-csv-coll").addEventListener("click", () => {
   const today = hojeLocal();
   if (collSub === "mine") {
     csvDownload(`coletas-${today}.csv`,
-      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Localidade de campo", "Latitude", "Longitude", "Precisão GPS (m)", "Substrato", "Pasta de fotos", "Notas", "Cultura", "DNA", "SSU", "LSU", "TEF1", "RPB1", "RPB2", "Genoma", "GenBank"],
-      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.site, c.lat, c.lon, c.gpsAcc, c.substrate, c.photos, c.notes, c.culture, c.dna, c.ssu, c.lsu, c.tef1, c.rpb1, c.rpb2, c.genome, c.genbank]));
+      ["Data", "Coleta", "Tipo da coleção", "Voucher de herbário", "Barcode de herbário", "Fotografado", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Localidade de campo", "Latitude", "Longitude", "Precisão GPS (m)", "Substrato", "Pasta de fotos", "Notas", "Cultura", "DNA", "SSU", "LSU", "TEF1", "RPB1", "RPB2", "Genoma", "GenBank", "Família", "Autor do nome", "Determinador", "Data de determinação", "País", "Estado", "Município", "Coletores adicionais"],
+      state.collections.map(c => [c.date, c.code, c.colltype, c.voucher, c.barcode, c.photographed === "sim" ? "sim" : "não", c.currentId, c.host, c.hostGroup, c.locality, c.site, c.lat, c.lon, c.gpsAcc, c.substrate, c.photos, c.notes, c.culture, c.dna, c.ssu, c.lsu, c.tef1, c.rpb1, c.rpb2, c.genome, c.genbank, c.family, c.author, c.determiner, c.detDate, c.country, c.stateProv, c.municipality, c.addColl]));
   } else {
     csvDownload(`amostras-colecoes-${today}.csv`,
       ["Fonte", "Coleção", "ID atual", "Hospedeiro", "Grupo do hospedeiro", "Localidade", "Latitude", "Longitude", "Coletor", "Data de coleta", "Determinador", "Data de determinação", "Notas"],
@@ -2648,17 +2696,29 @@ function grauMinSeg(dec, eixo) {
 }
 /* Itálico só nos nomes latinos: sp., cf., aff., nov. e afins ficam em redondo. */
 const ROMANO = /^(\(.*|.*\)|sp\.?|spp\.?|cf\.?|aff\.?|nr\.?|nov\.?|s\.l\.?|s\.str\.?|sensu|lato|stricto|var\.?|subsp\.?|f\.|complex|group|gr\.?|grupo|larva|ninfa|adult|nymph|indet\.?|\?)[,;]?$/i;
-function italico(nome) {
+/* Segmentos de um nome científico: só gênero e espécie em itálico (sp., cf., famílias… em redondo). */
+const PALAVRAS_COMUNS = new Set(["com", "sem", "sob", "sobre", "entre", "para", "pelo", "pela", "dos", "das", "nos", "nas", "uma", "uns",
+  "umas", "que", "the", "and", "with", "from", "under", "near", "leaf", "leaves", "moss", "bark", "soil", "folha", "folhas", "tronco",
+  "galho", "musgo", "solo", "casca", "raiz", "caule", "ramo", "cipó"]);
+function segItalico(nome) {
+  // itálico só em gênero (maiúscula inicial) e no epíteto logo depois dele (cf./aff./sp. no meio
+  // continuam em redondo); palavras soltas em minúscula ("folha de") ficam em redondo
+  let generoAberto = false;
   return String(nome).split(/\s+/).filter(Boolean).reduce((acc, tok) => {
     const limpo = tok.replace(/[,;]$/, "");
-    // família e acima (‑aceae, ‑idae, ‑inae, ‑ales…) ficam em redondo; só gênero e espécie em itálico
     const acimaDeGenero = /(aceae|idae|inae|ini|ales|ineae|oidea|phyta|opsida|mycetes|mycota|optera|morpha)$/i.test(limpo);
-    const ital = !ROMANO.test(tok) && !acimaDeGenero && /^[A-Za-z][a-z\-]*[a-z]$/.test(limpo) && !/[—:]/.test(tok);
-    const html = esc(tok);
+    const latino = !ROMANO.test(tok) && !acimaDeGenero && /^[A-Za-z][a-z\-]*[a-z]$/.test(limpo) && !/[—:]/.test(tok);
+    let ital = false;
+    if (latino && /^[A-Z]/.test(limpo)) { ital = true; generoAberto = true; }
+    else if (latino && generoAberto && limpo.length >= 3 && !PALAVRAS_COMUNS.has(limpo.toLowerCase())) { ital = true; generoAberto = false; }
+    else if (!/^(cf|aff|nr)\.?$/i.test(limpo)) generoAberto = false;
     const ult = acc[acc.length - 1];
-    if (ult && ult.ital === ital) ult.txt += " " + html; else acc.push({ ital, txt: html });
+    if (ult && ult.ital === ital) ult.txt += " " + tok; else acc.push({ ital, txt: tok });
     return acc;
-  }, []).map(p => (p.ital ? `<i>${p.txt}</i>` : p.txt)).join(" ");
+  }, []);
+}
+function italico(nome) {
+  return segItalico(nome).map(p => (p.ital ? `<i>${esc(p.txt)}</i>` : esc(p.txt))).join(" ");
 }
 const grupoCurto = g => String(g || "").replace(/\s+—\s+/, ": ").replace(/\s*\(indet\.\)/, "");
 
@@ -2762,6 +2822,327 @@ async function copiarMaterial(comItalico) {
   }
 }
 $("#btn-mat").addEventListener("click", abrirMaterial);
+/* ================= etiquetas de herbário =================
+ * Etiquetas de 12 × 7 cm no modelo das etiquetas do INPA, 4 por folha A4 (retrato),
+ * com marcas de corte. PDF gerado no próprio aparelho com jsPDF (vendor/jspdf). */
+const ETQ_W = 120, ETQ_H = 70, ETQ_POR_PAGINA = 4;
+const ETQ_PADRAO = { titulo: "TAJ Collection", subtitulo: "Manaus-Amazonas-Brasil", coletor: "Alves Júnior, T.",
+  pais: "Brasil", estado: "Amazonas", ecologia: "sim", notas: "sim" };
+const etqConfig = () => { try { return { ...ETQ_PADRAO, ...JSON.parse(localStorage.getItem("phd-etq-config") || "{}") }; } catch { return { ...ETQ_PADRAO }; } };
+const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+/* Nome sem autor aplicável: indeterminado, comparado/afim, sensu lato ou espécie nova. */
+const NOME_SEM_AUTOR = /\b(sp|spp|cf|aff|nov|s\.\s?l|sensu)\b\.?/i;
+const numeroColeta = c => (String(c.code || "").match(/(\d+[A-Za-z]?)\s*$/) || [, String(c.code || "").trim()])[1];
+function dataEtiqueta(v) {
+  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${+m[3]} ${MESES_PT[+m[2] - 1]} ${m[1]}` : String(v || "").trim();
+}
+function coordEtiqueta(dec, eixo) {
+  const n = parseFloat(dec);
+  if (isNaN(n)) return "";
+  let t = Math.round(Math.abs(n) * 3600);
+  const g = Math.floor(t / 3600); t -= g * 3600;
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return `${g}°${String(m).padStart(2, "0")}'${String(s).padStart(2, "0")}" ${eixo === "lat" ? (n < 0 ? "S" : "N") : (n < 0 ? "W" : "E")}`;
+}
+
+/* Conteúdo de uma etiqueta em linhas de segmentos { t, b (negrito), i (itálico) }.
+ * Devolve também os avisos do que está faltando. */
+function montarEtiqueta(c, cfg) {
+  const avisos = [];
+  const seg = (t, o = {}) => ({ t: String(t), b: !!o.b, i: !!o.i });
+  const nome = txt => segItalico(txt).map((p, k) => ({ t: (k ? " " : "") + p.txt, i: p.ital, b: false }));
+  const num = numeroColeta(c);
+  if (!c.code) avisos.push("sem código de coleta");
+  const fam = String(c.family || "").trim();
+  if (!fam) avisos.push("sem família");
+  const taxon = String(c.currentId || "").trim();
+  if (!taxon) avisos.push("sem identificação");
+  else if (!String(c.author || "").trim() && !NOME_SEM_AUTOR.test(taxon)) avisos.push("sem autor do nome");
+  const det = [String(c.determiner || "").trim(), String(c.detDate || "").trim() ? dataEtiqueta(c.detDate) : ""].filter(Boolean);
+  if (!c.determiner) avisos.push("sem determinador");
+  const lugar = [c.country || cfg.pais, c.stateProv || cfg.estado, c.municipality].map(x => String(x || "").trim()).filter(Boolean);
+  if (!String(c.municipality || "").trim()) avisos.push("sem município");
+  if (!String(c.locality || "").trim()) avisos.push("sem localidade");
+  const coords = numOk(c.lat) && numOk(c.lon) ? `${coordEtiqueta(c.lat, "lat")}, ${coordEtiqueta(c.lon, "lon")}` : "";
+  if (!coords) avisos.push("sem coordenadas");
+  if (!/^\d{4}-\d{2}-\d{2}/.test(c.date || "")) avisos.push("sem data de coleta");
+
+  const corpo = [];
+  if (taxon) corpo.push([...nome(taxon), ...(c.author ? [seg(" " + String(c.author).trim())] : [])]);
+  if (det.length) corpo.push([seg("Det.: " + det.join(" - "))]);
+  if (lugar.length) corpo.push([seg(lugar.join(", "), { b: true })]);
+  if (c.locality) corpo.push([seg(String(c.locality).trim())]);
+  if (coords) corpo.push([seg(coords + (c.gpsAcc ? `  (±${c.gpsAcc} m)` : ""))]);
+  if (cfg.ecologia === "sim") {
+    const eco = [];
+    if (c.host) {
+      eco.push(seg("Sobre "), ...nome(String(c.host).trim()));
+      const g = grupoCurto(c.hostGroup);
+      if (g) eco.push(seg(` (${g})`));
+    }
+    if (c.substrate) {
+      if (eco.length) eco.push(seg("; "));
+      eco.push(seg(c.host ? "em " : "Em "), ...nome(String(c.substrate).trim()));
+    }
+    if (eco.length) { if (!/\.\s*$/.test(eco[eco.length - 1].t)) eco.push(seg(".")); corpo.push(eco); }
+  }
+  const notas = notasDaEtiqueta(c.notes);
+  if (cfg.notas === "sim" && notas) corpo.push([seg(notas)]);
+  return {
+    numero: num ? `TAJ ${num}` : "",
+    familia: fam.toUpperCase(),
+    corpo,
+    coletor: [cfg.coletor.trim(), num].filter(Boolean).join(" "),
+    data: dataEtiqueta(c.date),
+    adicionais: String(c.addColl || "").trim(),
+    avisos,
+  };
+}
+
+/* Notas sem as linhas de metadados que a importação de planilhas acrescenta
+ * ("AA: 2023 · MM: 2 · Collection: MASTERS · kingdom: Fungi…"). */
+function notasDaEtiqueta(notas) {
+  return String(notas || "").split(/\n+/).map(l => l.trim()).filter(l => {
+    if (!l) return false;
+    const partes = l.split(/\s+·\s+/);
+    return !(partes.length >= 2 && partes.every(p => /^[^:]{1,30}:\s/.test(p)));
+  }).join("; ");
+}
+
+/* ---- desenho no PDF ---- */
+function fonte(doc, s, tam) { doc.setFont("times", s.b && s.i ? "bolditalic" : s.b ? "bold" : s.i ? "italic" : "normal"); doc.setFontSize(tam); }
+/* Quebra segmentos com estilos diferentes em linhas que caibam na largura (mm). */
+function quebrarSegmentos(doc, segs, largura, tam) {
+  const pal = [];
+  segs.forEach(s => String(s.t).split(/(\s+)/).forEach(p => { if (p) pal.push({ ...s, t: p }); }));
+  const linhas = [[]];
+  let w = 0;
+  pal.forEach(p => {
+    fonte(doc, p, tam);
+    const pw = doc.getTextWidth(p.t);
+    const espaco = /^\s+$/.test(p.t);
+    if (!espaco && w + pw > largura && linhas[linhas.length - 1].length) {
+      // remove espaço final da linha anterior e abre outra
+      const ult = linhas[linhas.length - 1];
+      while (ult.length && /^\s+$/.test(ult[ult.length - 1].t)) ult.pop();
+      linhas.push([]); w = 0;
+    }
+    if (espaco && !linhas[linhas.length - 1].length) return;
+    linhas[linhas.length - 1].push(p); w += pw;
+  });
+  return linhas;
+}
+function desenharSegmentos(doc, linha, x, y, tam) {
+  linha.forEach(s => { fonte(doc, s, tam); doc.text(s.t, x, y); x += doc.getTextWidth(s.t); });
+}
+
+function desenharEtiqueta(doc, e, cfg, x0, y0) {
+  const M = 6;                     // margem interna (mm)
+  const L = ETQ_W - 2 * M;         // largura útil
+  const pt = 0.3528;               // 1 pt em mm
+  doc.setDrawColor(0); doc.setTextColor(0);
+  doc.setLineWidth(0.35);
+  doc.line(x0 + M, y0 + 4, x0 + ETQ_W - M, y0 + 4);
+  doc.line(x0 + M, y0 + ETQ_H - 4, x0 + ETQ_W - M, y0 + ETQ_H - 4);
+  // cabeçalho centralizado
+  doc.setFont("helvetica", "bold"); doc.setFontSize(15);
+  doc.text(cfg.titulo, x0 + ETQ_W / 2, y0 + 10.5, { align: "center" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+  if (cfg.subtitulo) doc.text(cfg.subtitulo, x0 + ETQ_W / 2, y0 + 14.5, { align: "center" });
+
+  // família · número
+  const yFam = y0 + 20.5;
+  doc.setFont("times", "bold"); doc.setFontSize(11);
+  if (e.familia) doc.text(e.familia, x0 + M, yFam);
+  if (e.numero) doc.text(e.numero, x0 + ETQ_W - M, yFam, { align: "right" });
+
+  // rodapé: coletor · data e coletores adicionais
+  const yRodape = y0 + ETQ_H - 6.2 - (e.adicionais ? 4 : 0);
+  // corpo: encolhe a fonte até caber entre a família e o rodapé
+  const topo = yFam + 1.5, base = yRodape - 4.2;
+  let tam = 10, linhas, alt;
+  for (; tam >= 6.5; tam -= 0.25) {
+    linhas = e.corpo.flatMap(l => quebrarSegmentos(doc, l, L, tam));
+    alt = linhas.length * tam * pt * 1.32;
+    if (alt <= base - topo) break;
+  }
+  const passo = tam * pt * 1.32;
+  let y = topo + passo * 0.9;
+  linhas.forEach(l => { if (y <= base + 0.5) desenharSegmentos(doc, l, x0 + M, y, tam); y += passo; });
+
+  doc.setFont("times", "bold"); doc.setFontSize(10.5);
+  if (e.coletor) doc.text(e.coletor, x0 + M, yRodape);
+  if (e.data) doc.text(e.data, x0 + ETQ_W - M, yRodape, { align: "right" });
+  if (e.adicionais) {
+    doc.setFont("times", "normal"); doc.setFontSize(9);
+    const add = doc.splitTextToSize("& " + e.adicionais.replace(/^&\s*/, ""), L)[0];
+    doc.text(add, x0 + M, yRodape + 4);
+  }
+}
+function marcasDeCorte(doc, x, y) {
+  doc.setDrawColor(150); doc.setLineWidth(0.15);
+  const c = 3, d = 1.5; // comprimento e afastamento das marcas
+  [[x, y], [x + ETQ_W, y], [x, y + ETQ_H], [x + ETQ_W, y + ETQ_H]].forEach(([cx, cy]) => {
+    const sx = cx === x ? -1 : 1;
+    doc.line(cx + sx * d, cy, cx + sx * (d + c), cy);
+  });
+  doc.setDrawColor(0);
+}
+function gerarPDFEtiquetas(regs, cfg) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  doc.setProperties({ title: `Etiquetas ${cfg.titulo}`, creator: "PhD Tracker" });
+  const x = (210 - ETQ_W) / 2, y0 = (297 - ETQ_POR_PAGINA * ETQ_H) / 2;
+  regs.forEach((c, i) => {
+    const pos = i % ETQ_POR_PAGINA;
+    if (i && !pos) doc.addPage();
+    const y = y0 + pos * ETQ_H;
+    marcasDeCorte(doc, x, y);
+    desenharEtiqueta(doc, montarEtiqueta(c, cfg), cfg, x, y);
+  });
+  return doc;
+}
+
+/* ---- janela: configuração, avisos, prévia e download ---- */
+let jspdfPronto = null;
+function carregarJsPDF() {
+  if (window.jspdf) return Promise.resolve();
+  if (jspdfPronto) return jspdfPronto;
+  jspdfPronto = new Promise((ok, falha) => {
+    const js = document.createElement("script");
+    js.src = "./vendor/jspdf/jspdf.umd.min.js";
+    js.onload = () => ok(); js.onerror = () => { jspdfPronto = null; falha(new Error("não consegui carregar o gerador de PDF")); };
+    document.head.appendChild(js);
+  });
+  return jspdfPronto;
+}
+let etqRegs = [], etqURL = null;
+async function abrirEtiquetas() {
+  if (collSub !== "mine") { toast("Etiquetas são para as suas coletas — abra “Minhas coletas”."); return; }
+  const regs = matAlvos().slice().sort((a, b) => String(a.code || "").localeCompare(String(b.code || ""), "pt-BR", { numeric: true }));
+  if (!regs.length) { toast("Nenhuma coleta visível — ajuste a busca ou a seleção."); return; }
+  const btn = $("#btn-etq"), rot = btn.textContent;
+  if (!window.jspdf) { btn.disabled = true; btn.textContent = "Carregando…"; }
+  try { await carregarJsPDF(); } catch (e) { toast(e.message); return; }
+  finally { btn.disabled = false; btn.textContent = rot; }
+  etqRegs = regs;
+  const cfg = etqConfig();
+  const f = $("#etq-form");
+  Object.keys(ETQ_PADRAO).forEach(k => { if (f.elements[k]) f.elements[k].value = cfg[k]; });
+  $("#etq-titulo").textContent = `Etiquetas de herbário — ${regs.length} ${regs.length === 1 ? "coleta" : "coletas"}`
+    + (collView === "planilha" && gridSel.size ? " selecionadas" : collQuery.trim() ? " da busca" : "");
+  f.oninput = () => { clearTimeout(f._t); f._t = setTimeout(atualizarEtiquetas, 350); };
+  atualizarEtiquetas();
+  $("#etq-modal").showModal();
+}
+function lerCfgEtq() {
+  const f = $("#etq-form"), c = { ...ETQ_PADRAO };
+  Object.keys(ETQ_PADRAO).forEach(k => { if (f.elements[k]) c[k] = f.elements[k].value; });
+  try { localStorage.setItem("phd-etq-config", JSON.stringify(c)); } catch {}
+  return c;
+}
+function atualizarEtiquetas() {
+  const cfg = lerCfgEtq();
+  const comAviso = etqRegs.map(c => ({ c, a: montarEtiqueta(c, cfg).avisos })).filter(x => x.a.length);
+  const paginas = Math.ceil(etqRegs.length / ETQ_POR_PAGINA);
+  $("#etq-resumo").innerHTML = `${etqRegs.length} ${etqRegs.length === 1 ? "etiqueta" : "etiquetas"} em ${paginas} ${paginas === 1 ? "folha" : "folhas"} A4 (4 por folha)`
+    + (comAviso.length ? ` · <b>${comAviso.length}</b> com dados faltando — dá para imprimir assim, ou completar antes:` : " · nenhuma com dados faltando.");
+  $("#etq-avisos").innerHTML = comAviso.slice(0, 60).map(({ c, a }) =>
+    `<li><button type="button" class="link-btn" data-etq-abrir="${c.id}">${esc(c.code || "(sem código)")}</button> — ${esc(a.join(", "))}</li>`).join("")
+    + (comAviso.length > 60 ? `<li>… e mais ${comAviso.length - 60}</li>` : "");
+  $("#etq-avisos").hidden = !comAviso.length;
+  const sug = etqRegs.filter(c => c.currentId && (!c.family || (!c.author && !NOME_SEM_AUTOR.test(c.currentId)))).length;
+  $("#etq-gbif").hidden = !sug;
+  $("#etq-gbif").textContent = `Completar família e autor pelo GBIF (${sug})`;
+  if (etqURL) URL.revokeObjectURL(etqURL);
+  const doc = gerarPDFEtiquetas(etqRegs.slice(0, ETQ_POR_PAGINA), cfg);
+  etqURL = URL.createObjectURL(doc.output("blob"));
+  $("#etq-previa").src = etqURL + "#toolbar=0&navpanes=0&view=FitH";
+}
+async function baixarEtiquetas() {
+  if (!etqRegs.length) return;
+  await carregarJsPDF();
+  const cfg = lerCfgEtq();
+  const doc = gerarPDFEtiquetas(etqRegs, cfg);
+  const cods = etqRegs.map(c => numeroColeta(c)).filter(Boolean);
+  const faixa = cods.length ? (cods.length === 1 ? cods[0] : `${cods[0]}-${cods[cods.length - 1]}`) : "";
+  doc.save(`etiquetas-TAJ${faixa ? "-" + faixa : ""}-${hojeLocal()}.pdf`);
+  toast(`PDF com ${etqRegs.length} ${etqRegs.length === 1 ? "etiqueta" : "etiquetas"} gerado. Imprima em 100% (“tamanho real”), sem ajustar à página.`);
+}
+
+/* Família e autor do nome pelo GBIF (Fungi). Só preenche o que está vazio; dá para desfazer. */
+async function completarPeloGBIF() {
+  const btn = $("#etq-gbif");
+  const alvos = etqRegs.filter(c => c.currentId && (!c.family || !c.author));
+  const nomes = [...new Set(alvos.map(c => limparNomeFungo(c.currentId)).filter(Boolean))];
+  btn.disabled = true;
+  const res = new Map();
+  let feitos = 0;
+  await Promise.all([0, 1, 2, 3].map(async () => {
+    while (nomes.length) {
+      const n = nomes.shift();
+      try {
+        const r = await fetch("https://api.gbif.org/v1/species/match?kingdom=Fungi&name=" + encodeURIComponent(n));
+        const j = await r.json();
+        if (j && j.matchType !== "NONE" && j.kingdom === "Fungi") {
+          const exato = j.rank === "SPECIES" && normTxt(j.canonicalName) === normTxt(n);
+          let autor = "";
+          if (exato) {
+            autor = j.authorship || "";
+            if (!autor && j.usageKey) {
+              const sp = await (await fetch("https://api.gbif.org/v1/species/" + j.usageKey)).json();
+              autor = sp.authorship || "";
+            }
+          }
+          res.set(n, { familia: j.family || "", autor: autor.trim() });
+        }
+      } catch { /* sem rede: segue */ }
+      btn.textContent = `Consultando o GBIF… ${++feitos}`;
+    }
+  }));
+  const entries = [];
+  let nFam = 0, nAut = 0;
+  alvos.forEach(c => {
+    const r = res.get(limparNomeFungo(c.currentId));
+    if (!r) return;
+    const antes = { ...c };
+    let mudou = false;
+    if (!c.family && r.familia) { c.family = r.familia; nFam++; mudou = true; }
+    if (!c.author && r.autor && !NOME_SEM_AUTOR.test(c.currentId)) { c.author = r.autor; nAut++; mudou = true; }
+    if (mudou) entries.push({ id: c.id, before: antes });
+  });
+  pushUndo(`Família/autor pelo GBIF em ${entries.length} coletas`, "collections", entries);
+  save(); renderColl();
+  btn.disabled = false;
+  atualizarEtiquetas();
+  toast(`GBIF: família em ${nFam} e autor em ${nAut} ${entries.length === 1 ? "coleta" : "coletas"}.`
+    + (res.size < alvos.length ? " Os não encontrados ficaram em branco." : ""), entries.length > 0);
+}
+/* "Ophiocordyceps kniphofioides s.l. sp. nov." -> "Ophiocordyceps kniphofioides"; "Akanthomyces sp. Nov." -> "Akanthomyces" */
+function limparNomeFungo(s) {
+  const pal = String(s).replace(/\(.*?\)/g, " ").trim().split(/\s+/);
+  const out = [];
+  for (const p of pal) {
+    if (ROMANO.test(p) || !/^[A-Za-z][a-z\-]*$/.test(p)) break;
+    out.push(p);
+    if (out.length === 2) break;
+  }
+  return out.join(" ");
+}
+
+$("#btn-etq").addEventListener("click", abrirEtiquetas);
+$("#etq-baixar").addEventListener("click", baixarEtiquetas);
+$("#etq-gbif").addEventListener("click", completarPeloGBIF);
+$("#etq-fechar").addEventListener("click", () => $("#etq-modal").close());
+$("#etq-avisos").addEventListener("click", e => {
+  const id = e.target.closest("[data-etq-abrir]")?.dataset.etqAbrir;
+  if (!id) return;
+  $("#etq-modal").close();
+  openRecord("mine", id);
+});
+
 
 /* ================= Darwin Core =================
  * Padrão do GBIF/speciesLink/IPT: vírgula, UTF-8 sem BOM, nomes de termos oficiais.
@@ -3693,6 +4074,14 @@ const IMPORT_FIELDS = {
     { key: "rpb1", label: "RPB1", kind: "list", list: LAB_LOCUS, aliases: ["rpb1", "pcr rpb1"] },
     { key: "rpb2", label: "RPB2", kind: "list", list: LAB_LOCUS, aliases: ["rpb2", "pcr rpb2"] },
     { key: "genome", label: "Genoma", kind: "list", list: LAB_GENOMA, aliases: ["genoma", "genome", "illumina", "wgs"] },
+    { key: "family", label: "Família", aliases: ["familia", "family"] },
+    { key: "author", label: "Autor do nome", aliases: ["autor", "author", "authorship", "scientificnameauthorship", "autoria"] },
+    { key: "determiner", label: "Determinador", aliases: ["determinador", "determiner", "identifiedby", "det", "detby"] },
+    { key: "detDate", label: "Data de determinação", kind: "date", aliases: ["data de determinacao", "det date", "dateidentified", "data det"] },
+    { key: "country", label: "País", aliases: ["pais", "country"] },
+    { key: "stateProv", label: "Estado", aliases: ["estado", "state", "stateprovince", "uf", "province"] },
+    { key: "municipality", label: "Município", aliases: ["municipio", "county", "countymunicip", "municipality", "cidade"] },
+    { key: "addColl", label: "Coletores adicionais", aliases: ["coletores adicionais", "addcoll", "add coll", "additional collectors", "outros coletores"] },
     { key: "genbank", label: "GenBank", aliases: ["genbank", "acessos", "accession", "accessions", "associatedsequences", "genbank accession"] },
     { key: "site", label: "Localidade de campo", aliases: ["localidade de campo", "sitio", "site", "area de coleta", "ponto de coleta"] },
     { key: "gpsAcc", label: "Precisão GPS (m)", aliases: ["precisao gps m", "precisao gps", "precisao", "coordinateuncertaintyinmeters", "accuracy", "gps accuracy", "erro gps"] },
